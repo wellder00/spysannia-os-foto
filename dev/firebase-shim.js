@@ -134,6 +134,35 @@
     doc: (path) => { const { c, id } = split(path); return SYNCED.has(c) ? firestoreDocRef(c, id) : localDocRef(path); },
   };
 
+  /* ---------- одноразове перенесення старих локальних photoFlags у Firestore ----------
+   * До підключення Firestore позначки (колір/опис/двигун), поставлені на цьому дзеркалі,
+   * писались у звичайний localStorage (як і items/requests). Після переходу на Firestore
+   * та стара локальна копія лишається "осиротілою" — її ніхто більше не читає. Ця функція
+   * один раз переносить такі записи у Firestore (не чіпаючи документи, які там вже є —
+   * щоб не затерти щось новіше, поставлене вже через спільну базу).
+   */
+  const MIGRATE_KEY = "spysannia-pf-migrated";
+  async function migrateLocalPhotoFlags() {
+    try {
+      if (localStorage.getItem(MIGRATE_KEY) === "1") return;
+      const raw = localStorage.getItem(KEY);
+      const old = raw ? JSON.parse(raw) : null;
+      const pf = old && old.photoFlags;
+      const ids = pf ? Object.keys(pf) : [];
+      if (!ids.length) { localStorage.setItem(MIGRATE_KEY, "1"); return; }
+      const fs = await loadFirestore();
+      let moved = 0;
+      for (const id of ids) {
+        const ref = fs.collection("photoFlags").doc(id);
+        const snap = await ref.get();
+        if (!snap.exists) { await ref.set(pf[id]); moved++; }
+      }
+      localStorage.setItem(MIGRATE_KEY, "1");
+      console.info(`[mirror-shim] перенесено в Firestore позначок зі старої локальної бази: ${moved} з ${ids.length}`);
+    } catch (e) { console.warn("[mirror-shim] не вдалося перенести старі позначки", e); }
+  }
+  migrateLocalPhotoFlags();
+
   const downloads = {
     async save({ filename, data }) {
       const blob = data instanceof Blob ? data : new Blob([data]);
