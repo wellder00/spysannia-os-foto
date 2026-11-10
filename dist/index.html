@@ -1,5 +1,6 @@
 <script src="../dev/claude-shim.js"></script>
 <title>Списание ОС ГМЗ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -182,15 +183,21 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .pgrid{display:flex;flex-wrap:wrap;gap:8px}
 .pthumb{width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:var(--sunk)}
 button.pill{border:0;font:inherit}
-.lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px}
-.lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px}
-.lightbox .btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff}
+.lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;touch-action:pan-y}
+.lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px;touch-action:pinch-zoom}
+.lightbox .btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 .lightbox .btn:hover{background:rgba(255,255,255,.22)}
-.lightbox #lb-close{position:absolute;top:16px;right:16px}
-.lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:22px;padding:8px 14px}
-#lb-prev{left:16px}#lb-next{right:16px}
+.lightbox #lb-close{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px))}
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:26px;padding:10px 16px}
+#lb-prev{left:calc(8px + env(safe-area-inset-left,0px))}#lb-next{right:calc(8px + env(safe-area-inset-right,0px))}
 .lb-cap{color:#fff;text-align:center}
 @media (max-width:520px){.fgrid,.kv{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:480px){
+  .fbtn{width:22px;height:22px}
+  .pthumb{width:100px;height:100px}
+  .lightbox img{max-width:96vw;max-height:72vh}
+  .lb-nav{font-size:24px;padding:12px 16px}
+}
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
 </style>
 
@@ -787,6 +794,22 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){if(lb){closeLightbox();return} if(openInv)closeDrawer();return}
   if(lb&&e.key==="ArrowLeft"){lbStep(-1);return}
   if(lb&&e.key==="ArrowRight"){lbStep(1);return}
+});
+/* свайп по фото в лайтбоксі: вліво/вправо — перегорнути, вниз — закрити */
+let ts=null;
+$("#lightbox").addEventListener("touchstart",e=>{if(e.touches.length===1){const t=e.touches[0];ts={x:t.clientX,y:t.clientY,drag:false}}else ts=null},{passive:true});
+$("#lightbox").addEventListener("touchmove",e=>{
+  if(!ts||e.touches.length!==1)return;
+  const t=e.touches[0],dx=t.clientX-ts.x,dy=t.clientY-ts.y;
+  if(!ts.drag&&Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy))ts.drag=true;
+  if(ts.drag)e.preventDefault();
+},{passive:false});
+$("#lightbox").addEventListener("touchend",e=>{
+  if(!ts)return;
+  const t=e.changedTouches[0],dx=t.clientX-ts.x,dy=t.clientY-ts.y;
+  ts=null;
+  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)){lbStep(dx<0?1:-1)}
+  else if(dy>80&&Math.abs(dy)>Math.abs(dx)){closeLightbox()}
 });
 let ct; function saveCommon(){clearTimeout(ct);ct=setTimeout(async()=>{try{await db.doc("settings/common").set({...common,updatedAt:new Date().toISOString()});$("#common-saving").textContent="Сохранено"}catch(e){$("#common-saving").textContent="Не удалось сохранить"}},600)}
 
