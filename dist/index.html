@@ -9,7 +9,7 @@
   --bg:#f3f4f2; --surface:#ffffff; --sunk:#e9ebe7; --line:#d5d9d2; --ink:#1d2320; --muted:#5d6760;
   --accent:#1f5f5b; --accent-ink:#ffffff; --accent-soft:#dcebe8;
   --warn:#9a6400; --warn-soft:#fbefd2; --ok:#2d6a2f; --ok-soft:#dcefd9; --bad:#a3352b; --bad-soft:#f7dfdb;
-  --work:#1f4f8a; --work-soft:#dde7f5; --done:#4b5563; --done-soft:#e5e7e4;
+  --work:#1f4f8a; --work-soft:#dde7f5; --done:#4b5563; --done-soft:#e5e7e4; --purple:#6d28d9; --purple-soft:#ece6fb;
   --f-ui:"Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
   --f-num:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
   --r:8px;
@@ -18,12 +18,12 @@
   --bg:#131715; --surface:#1b201e; --sunk:#232926; --line:#333b37; --ink:#e6ebe7; --muted:#9aa59e;
   --accent:#6fbfb6; --accent-ink:#0d1a18; --accent-soft:#1f3633;
   --warn:#e6b45a; --warn-soft:#3a2f18; --ok:#8dce8f; --ok-soft:#1f3320; --bad:#ef8e83; --bad-soft:#3d221f;
-  --work:#8db4ea; --work-soft:#1d2a3d; --done:#b4bcb6; --done-soft:#2a302d; color-scheme:dark}}
+  --work:#8db4ea; --work-soft:#1d2a3d; --done:#b4bcb6; --done-soft:#2a302d; --purple:#c4b5fd; --purple-soft:#2e2347; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#131715; --surface:#1b201e; --sunk:#232926; --line:#333b37; --ink:#e6ebe7; --muted:#9aa59e;
   --accent:#6fbfb6; --accent-ink:#0d1a18; --accent-soft:#1f3633;
   --warn:#e6b45a; --warn-soft:#3a2f18; --ok:#8dce8f; --ok-soft:#1f3320; --bad:#ef8e83; --bad-soft:#3d221f;
-  --work:#8db4ea; --work-soft:#1d2a3d; --done:#b4bcb6; --done-soft:#2a302d; color-scheme:dark}
+  --work:#8db4ea; --work-soft:#1d2a3d; --done:#b4bcb6; --done-soft:#2a302d; --purple:#c4b5fd; --purple-soft:#2e2347; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.45}
 .wrap{max-width:1240px;margin:0 auto;padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -158,10 +158,24 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .nw small{color:var(--muted)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:40}
 .saving{font-size:12px;color:var(--muted)}
-.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:8px}
-.pcard>summary{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;list-style:none;flex-wrap:wrap}
+.pcard{background:var(--surface);border:1px solid var(--line);border-left:4px solid transparent;border-radius:var(--r);margin-bottom:8px}
+.pcard>summary{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;list-style:none;flex-wrap:wrap;border-radius:0 var(--r) 0 0}
 .pcard>summary::-webkit-details-marker{display:none}
 .pcard[open]>summary{border-bottom:1px solid var(--line)}
+.pcard.flag-green{border-left-color:var(--ok)}
+.pcard.flag-yellow{border-left-color:var(--warn)}
+.pcard.flag-red{border-left-color:var(--bad)}
+.pcard.flag-purple{border-left-color:var(--purple)}
+.pcard.flag-green>summary{background:var(--ok-soft)}
+.pcard.flag-yellow>summary{background:var(--warn-soft)}
+.pcard.flag-red>summary{background:var(--bad-soft)}
+.pcard.flag-purple>summary{background:var(--purple-soft)}
+.fseg{display:flex;gap:5px;align-items:center}
+.fbtn{width:16px;height:16px;border-radius:50%;border:1px solid var(--line);padding:0;cursor:pointer;background:var(--sunk);flex:none}
+.fbtn.ok[aria-pressed="true"]{background:var(--ok);border-color:var(--ok)}
+.fbtn.warn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn)}
+.fbtn.bad[aria-pressed="true"]{background:var(--bad);border-color:var(--bad)}
+.fbtn.purple[aria-pressed="true"]{background:var(--purple);border-color:var(--purple)}
 .psum{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
 .psum .nm{overflow-wrap:anywhere}
 .pbody{padding:12px;display:flex;flex-direction:column;gap:10px}
@@ -333,7 +347,7 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <a class="btn sm pri" href="${esc(gmailUrl(it,list))}" target="_blank" rel="noopener">2. Відкрити лист у Gmail</a></div>
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
-let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, conn="wait";
+let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, conn="wait";
 let tab="items", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -626,9 +640,15 @@ async function download(id){
 /* ---------- photo catalog ---------- */
 function photoUrl(p){return "../"+p.split("/").map(encodeURIComponent).join("/")}
 function pcardHtml(inv,e){
-  const linked=items[inv], list=e.photos||[];
-  return `<details class="pcard" data-inv="${esc(inv)}">
+  const linked=items[inv], list=e.photos||[], fl=flags[inv];
+  return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
+      <span class="fseg" title="Позначка">
+        <button class="fbtn ok" data-flagbtn="green" data-inv="${esc(inv)}" aria-pressed="${fl==="green"}" aria-label="Є"></button>
+        <button class="fbtn warn" data-flagbtn="yellow" data-inv="${esc(inv)}" aria-pressed="${fl==="yellow"}" aria-label="Потрібно перевірити"></button>
+        <button class="fbtn bad" data-flagbtn="red" data-inv="${esc(inv)}" aria-pressed="${fl==="red"}" aria-label="Немає"></button>
+        <button class="fbtn purple" data-flagbtn="purple" data-inv="${esc(inv)}" aria-pressed="${fl==="purple"}" aria-label="На списання"></button>
+      </span>
       <span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</summary>
     <div class="pbody">
       ${e.rah?`<div class="kv">
@@ -650,6 +670,12 @@ function renderPhotoList(){
   const rows=entries.filter(([inv,e])=>!s||inv.includes(s)||String(e.name||"").toLowerCase().includes(s)).sort((a,b)=>a[0].localeCompare(b[0]));
   L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e)).join(""):'<div class="empty">Нічого не знайдено.</div>';
   for(const d of L.querySelectorAll("details[data-inv]"))if(openSet.has(d.dataset.inv))d.open=true;
+}
+async function setFlag(inv,color){
+  flags={...flags,[inv]:color}; if(!color)delete flags[inv]; renderPhotoList();
+  if(!db)return;
+  try{ if(color)await db.doc(`photoFlags/${inv}`).set({status:color,updatedAt:new Date().toISOString()}); else await db.doc(`photoFlags/${inv}`).delete() }
+  catch(e){ toast("Не вдалося зберегти позначку") }
 }
 function openLightbox(inv,idx){lb={inv,idx:+idx};renderLightbox()}
 function closeLightbox(){lb=null;$("#lightbox").hidden=true}
@@ -683,6 +709,7 @@ document.addEventListener("click",async e=>{
   const t=e.target;
   const tb=t.closest(".tab"); if(tb){showTab(tb.dataset.tab);return}
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
+  const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,flags[inv]===c?null:c);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
   if(t.closest("#lb-prev")){lbStep(-1);return}
@@ -781,6 +808,7 @@ renderStats();renderFilters();renderPhotoList();
   db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;render()},onErr);
   db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
+  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{const st=(d.data()||{}).status;if(st)n[d.id]=st});flags=n;renderPhotoList()},onErr);
 })();
 })();
 </script>
