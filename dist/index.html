@@ -646,8 +646,17 @@ async function download(id){
 
 /* ---------- photo catalog ---------- */
 function photoUrl(p){return "../"+p.split("/").map(encodeURIComponent).join("/")}
+function isPump(name){return /насос/i.test(name||"")}
+function defaultHasMotor(name){return !/без\s*ел/i.test(name||"")}
+function motorDupInv(inv,no){
+  const v=String(no||"").trim(); if(!v)return null;
+  const hit=Object.entries(flags).find(([k,m])=>k!==inv&&m&&String(m.motorNo||"").trim()===v);
+  return hit?hit[0]:null;
+}
 function pcardHtml(inv,e){
-  const linked=items[inv], list=e.photos||[], fl=flags[inv];
+  const linked=items[inv], list=e.photos||[], meta=flags[inv]||{}, fl=meta.status;
+  const pump=isPump(e.name), hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
+  const dup=pump&&!hasMotor?motorDupInv(inv,meta.motorNo):null;
   return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">
@@ -665,6 +674,15 @@ function pcardHtml(inv,e){
         <div><small>Залишкова</small><b class="num">${money(e.zal)}</b></div>
       </div>`:'<div class="sub">Немає даних з відомості — лише фото за номером.</div>'}
       ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(photoUrl(p))}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
+      <div class="f full"><label for="pd-${esc(inv)}">Опис позиції</label><textarea id="pd-${esc(inv)}" data-pf="desc" data-pinv="${esc(inv)}" placeholder="Нотатки, стан, особливості…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
+      ${pump?`<div class="f full">
+        <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" data-pmotor="${esc(inv)}" ${hasMotor?"checked":""}> Є електродвигун</label>
+        <div data-motorwrap="${esc(inv)}" ${hasMotor?"hidden":""}>
+          <label for="pm-${esc(inv)}" style="display:block;margin-top:6px">Номенклатурний/інвентарний № електродвигуна (знятий окремо)</label>
+          <input id="pm-${esc(inv)}" data-pf="motorNo" data-pinv="${esc(inv)}" value="${esc(meta.motorNo||"")}" placeholder="напр. 1234567">
+          <div class="note bad" data-motorwarn="${esc(inv)}" ${dup?"":"hidden"} style="margin-top:6px">Цей номер вже вказано для інв. № ${esc(dup||"")}!</div>
+        </div>
+      </div>`:""}
     </div>
   </details>`;
 }
@@ -675,14 +693,29 @@ function renderPhotoList(){
   if(!entries.length){L.innerHTML='<div class="empty">Довідник фото не завантажено. Виконайте <code>python build_photos.py</code> і відкрийте застосунок через <code>npm run serve</code>.</div>';return}
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>!s||inv.includes(s)||String(e.name||"").toLowerCase().includes(s)).sort((a,b)=>a[0].localeCompare(b[0]));
+  const focus=document.activeElement, fInv=focus&&focus.dataset?focus.dataset.pinv:null, fField=focus&&focus.dataset?focus.dataset.pf:null;
   L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e)).join(""):'<div class="empty">Нічого не знайдено.</div>';
   for(const d of L.querySelectorAll("details[data-inv]"))if(openSet.has(d.dataset.inv))d.open=true;
+  if(fInv&&fField){const el=L.querySelector(`[data-pinv="${CSS.escape(fInv)}"][data-pf="${CSS.escape(fField)}"]`);if(el){el.focus();const v=el.value;el.setSelectionRange&&el.setSelectionRange(v.length,v.length)}}
 }
-async function setFlag(inv,color){
-  flags={...flags,[inv]:color}; if(!color)delete flags[inv]; renderPhotoList();
+async function savePhotoMeta(inv,patch){
+  const next={...(flags[inv]||{}),...patch};
+  flags={...flags,[inv]:next};
   if(!db)return;
-  try{ if(color)await db.doc(`photoFlags/${inv}`).set({status:color,updatedAt:new Date().toISOString()}); else await db.doc(`photoFlags/${inv}`).delete() }
-  catch(e){ toast("Не вдалося зберегти позначку") }
+  try{ await db.doc(`photoFlags/${inv}`).update({...patch,updatedAt:new Date().toISOString()}) }
+  catch(e){ try{ await db.doc(`photoFlags/${inv}`).set({...next,updatedAt:new Date().toISOString()}) }catch(e2){ toast("Не вдалося зберегти") } }
+}
+function setFlag(inv,color){ renderPhotoListFlagOnly(inv,color); savePhotoMeta(inv,{status:color||null}) }
+function renderPhotoListFlagOnly(inv,color){
+  flags={...flags,[inv]:{...(flags[inv]||{}),status:color||null}};
+  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(!d)return;
+  d.className="pcard"+(color?" flag-"+color:"");
+  d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color));
+}
+const pmq={};
+function savePhotoMetaDebounced(inv,patch){
+  flags={...flags,[inv]:{...(flags[inv]||{}),...patch}};
+  clearTimeout(pmq[inv]); pmq[inv]=setTimeout(()=>savePhotoMeta(inv,patch),500);
 }
 function openLightbox(inv,idx){lb={inv,idx:+idx};renderLightbox()}
 function closeLightbox(){lb=null;$("#lightbox").hidden=true}
@@ -716,7 +749,7 @@ document.addEventListener("click",async e=>{
   const t=e.target;
   const tb=t.closest(".tab"); if(tb){showTab(tb.dataset.tab);return}
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
-  const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,flags[inv]===c?null:c);return}
+  const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
   if(t.closest("#lb-prev")){lbStep(-1);return}
@@ -788,8 +821,23 @@ document.addEventListener("input",e=>{
   if(t.dataset.cf&&openInv){const i=+t.closest("[data-ci]").dataset.ci;const cols=[...(items[openInv].colored||[])];cols[i]={...cols[i],[t.dataset.cf]:t.dataset.cf==="kg"?num(t.value):t.value};items[openInv]={...items[openInv],colored:cols};$("#calc").innerHTML=calcHtml(items[openInv]);save(`items/${openInv}`,{colored:cols},"Сохранено");return}
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
+  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf,v=t.value;savePhotoMetaDebounced(inv,{[k]:v});
+    if(k==="motorNo"){const dup=motorDupInv(inv,v);const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
+      if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}}
+    return}
 });
-document.addEventListener("change",e=>{if(e.target.id==="f-route"){fRoute=e.target.value;renderList()}if(e.target.id==="f-owner"){fOwner=e.target.value;renderList()}});
+document.addEventListener("change",e=>{
+  const t=e.target;
+  if(t.id==="f-route"){fRoute=t.value;renderList();return}
+  if(t.id==="f-owner"){fOwner=t.value;renderList();return}
+  if(t.dataset.pmotor){const inv=t.dataset.pmotor,has=t.checked;
+    const wrap=document.querySelector(`[data-motorwrap="${CSS.escape(inv)}"]`); if(wrap)wrap.hidden=has;
+    savePhotoMeta(inv,{hasMotor:has});
+    const meta=flags[inv]||{}, dup=!has?motorDupInv(inv,meta.motorNo):null;
+    const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
+    if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}
+    return}
+});
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){if(lb){closeLightbox();return} if(openInv)closeDrawer();return}
   if(lb&&e.key==="ArrowLeft"){lbStep(-1);return}
@@ -831,7 +879,7 @@ renderStats();renderFilters();renderPhotoList();
   db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;render()},onErr);
   db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
-  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{const st=(d.data()||{}).status;if(st)n[d.id]=st});flags=n;renderPhotoList()},onErr);
+  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList()},onErr);
 })();
 })();
 </script>
