@@ -216,14 +216,14 @@ button.pill{border:0;font:inherit}
   <div class="stats" id="stats"></div>
 
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="items" aria-selected="true">Позиции</button>
+    <button class="tab" role="tab" data-tab="items" aria-selected="false">Позиции</button>
     <button class="tab" role="tab" data-tab="req" aria-selected="false">Вопросы от Claude <span class="cnt" id="cnt-req">0</span></button>
     <button class="tab" role="tab" data-tab="docs" aria-selected="false">Документы <span class="cnt" id="cnt-docs">0</span></button>
     <button class="tab" role="tab" data-tab="common" aria-selected="false">Общие данные</button>
-    <button class="tab" role="tab" data-tab="photos" aria-selected="false">Картки ОС <span class="cnt" id="cnt-photos">0</span></button>
+    <button class="tab" role="tab" data-tab="photos" aria-selected="true">Картки ОС <span class="cnt" id="cnt-photos">0</span></button>
   </nav>
 
-  <section id="v-items">
+  <section id="v-items" hidden>
     <div class="bar">
       <input id="q" class="search" type="search" placeholder="Поиск по номеру или названию">
       <select id="f-route" aria-label="Маршрут">
@@ -268,7 +268,7 @@ button.pill{border:0;font:inherit}
     </div>
   </section>
 
-  <section id="v-photos" hidden>
+  <section id="v-photos">
     <p class="sub" style="margin:0 0 12px">Усі інвентарні номери з відомості ОЗ і фото з папки «ОС». Працює лише при локальному запуску через сервер (<code>npm run serve</code>) — в Artifact на claude.ai фото недоступні.</p>
     <div class="bar"><input id="p-q" class="search" type="search" placeholder="Пошук за інв. номером або назвою"></div>
     <div class="stack" id="photo-list"><div class="empty">Завантажую довідник…</div></div>
@@ -358,7 +358,7 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
 let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, conn="wait";
-let tab="items", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", sel=new Set(), openInv=null, lb=null;
+let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>(v==null||v==="")?"—":Number(v).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});
