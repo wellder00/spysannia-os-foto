@@ -159,10 +159,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .nw small{color:var(--muted)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:40}
 .saving{font-size:12px;color:var(--muted)}
+/* Картки ОС: липка панель пошуку/фільтрів, картка-акордеон, сітка мініатюр */
+.ptool{position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0 8px;margin-bottom:6px}
+.ptool .bar{margin-bottom:8px}
+.ptool .bar:last-child{margin-bottom:0}
+.chip .cnt{font-family:var(--f-num);font-size:11px;opacity:.75;margin-left:4px}
+.chip .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .pcard{background:var(--surface);border:1px solid var(--line);border-left:4px solid transparent;border-radius:var(--r);margin-bottom:8px}
 .pcard>summary{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;list-style:none;flex-wrap:wrap;border-radius:0 var(--r) 0 0}
 .pcard>summary::-webkit-details-marker{display:none}
 .pcard[open]>summary{border-bottom:1px solid var(--line)}
+.ptags{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .pcard.flag-green{border-left-color:var(--ok)}
 .pcard.flag-yellow{border-left-color:var(--warn)}
 .pcard.flag-red{border-left-color:var(--bad)}
@@ -183,8 +190,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .psum{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
 .psum .nm{overflow-wrap:anywhere}
 .pbody{padding:12px;display:flex;flex-direction:column;gap:10px}
-.pgrid{display:flex;flex-wrap:wrap;gap:8px}
-.pthumb{width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:var(--sunk)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.pthumb{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:var(--sunk)}
 button.pill{border:0;font:inherit}
 .lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;touch-action:pan-y}
 .lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px;touch-action:pinch-zoom}
@@ -195,9 +202,20 @@ button.pill{border:0;font:inherit}
 #lb-prev{left:calc(8px + env(safe-area-inset-left,0px))}#lb-next{right:calc(8px + env(safe-area-inset-right,0px))}
 .lb-cap{color:#fff;text-align:center}
 @media (max-width:520px){.fgrid,.kv{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){
+  /* компактніша шапка — на телефоні головне список, а не заголовок */
+  .wrap{padding-block:12px 48px}
+  header.top{margin-bottom:10px;gap:4px 16px}
+  h1{font-size:18px}
+  .tabs{margin-bottom:10px}
+  /* сводка картки у два рядки: назва зверху, кнопки-позначки і теги знизу */
+  .pcard>summary{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"n n" "f t";row-gap:8px;column-gap:8px}
+  .pcard>summary .psum{grid-area:n}
+  .pcard>summary .fseg{grid-area:f}
+  .pcard>summary .ptags{grid-area:t}
+}
 @media (max-width:480px){
   .fbtn{width:22px;height:22px}
-  .pthumb{width:100px;height:100px}
   .lightbox img{max-width:96vw;max-height:72vh}
   .lb-nav{font-size:24px;padding:12px 16px}
 }
@@ -213,17 +231,16 @@ button.pill{border:0;font:inherit}
     <div class="conn"><span class="dot" id="conn-dot"></span><span id="conn-txt">Подключаюсь к базе…</span></div>
   </header>
 
-  <div class="stats" id="stats"></div>
-
   <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="photos" aria-selected="true">Карточки ОС <span class="cnt" id="cnt-photos">0</span></button>
     <button class="tab" role="tab" data-tab="items" aria-selected="false">Позиции</button>
     <button class="tab" role="tab" data-tab="req" aria-selected="false">Вопросы от Claude <span class="cnt" id="cnt-req">0</span></button>
     <button class="tab" role="tab" data-tab="docs" aria-selected="false">Документы <span class="cnt" id="cnt-docs">0</span></button>
     <button class="tab" role="tab" data-tab="common" aria-selected="false">Общие данные</button>
-    <button class="tab" role="tab" data-tab="photos" aria-selected="true">Картки ОС <span class="cnt" id="cnt-photos">0</span></button>
   </nav>
 
   <section id="v-items" hidden>
+    <div class="stats" id="stats"></div>
     <div class="bar">
       <input id="q" class="search" type="search" placeholder="Поиск по номеру или названию">
       <select id="f-route" aria-label="Маршрут">
@@ -269,9 +286,11 @@ button.pill{border:0;font:inherit}
   </section>
 
   <section id="v-photos">
-    <p class="sub" style="margin:0 0 12px">Усі інвентарні номери з відомості ОЗ і фото з папки «ОС». Працює лише при локальному запуску через сервер (<code>npm run serve</code>) — в Artifact на claude.ai фото недоступні.</p>
-    <div class="bar"><input id="p-q" class="search" type="search" placeholder="Пошук за інв. номером або назвою"></div>
-    <div class="stack" id="photo-list"><div class="empty">Завантажую довідник…</div></div>
+    <div class="ptool">
+      <div class="bar"><input id="p-q" class="search" type="search" placeholder="Поиск по инв. номеру или названию"></div>
+      <div class="bar" id="f-pflag"></div>
+    </div>
+    <div class="stack" id="photo-list"><div class="empty">Загружаю справочник…</div></div>
   </section>
 </div>
 
@@ -358,7 +377,7 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
 let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, conn="wait";
-let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", sel=new Set(), openInv=null, lb=null;
+let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>(v==null||v==="")?"—":Number(v).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -656,32 +675,31 @@ function motorDupInv(inv,no){
   const hit=Object.entries(flags).find(([k,m])=>k!==inv&&m&&String(m.motorNo||"").trim()===v);
   return hit?hit[0]:null;
 }
-function updateAlertTag(inv){
-  const e=catalog[inv]||{}, meta=flags[inv]||{};
-  const pump=isPump(e.name), hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
-  const show=pump&&!hasMotor&&!String(meta.motorNo||"").trim();
-  const d=document.querySelector(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(!d)return;
+/* стан «електродвигун» для насоса: є/немає, номер знятого двигуна, дублікат номера, чи бракує номера */
+function motorState(inv,e){
+  const meta=flags[inv]||{}, pump=isPump(e.name);
+  const hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
+  const no=String(meta.motorNo||"").trim();
+  return {pump,hasMotor,no,dup:pump&&!hasMotor?motorDupInv(inv,no):null,missing:pump&&!hasMotor&&!no};
+}
+const FLAGS=[["green","ok","Есть"],["yellow","warn","Проверить"],["red","bad","Нет"],["purple","purple","На списание"]];
+const ALERT_TXT="⚠ без двигуна і номера", ALERT_TITLE="Немає електродвигуна, і номер не вказано";
+/* точкове оновлення DOM картки після зміни двигуна/номера — без повного перерендеру списку (щоб не губити фокус) */
+function refreshMotorUi(inv){
+  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(!d)return;
+  const m=motorState(inv,catalog[inv]||{});
+  const wrap=d.querySelector("[data-motorwrap]"); if(wrap)wrap.hidden=m.hasMotor;
+  const warn=d.querySelector("[data-motorwarn]"); if(warn){warn.hidden=!m.dup;warn.textContent=m.dup?`Цей номер вже вказано для інв. № ${m.dup}!`:""}
   let tag=d.querySelector(".tag.alert");
-  if(show&&!tag){
-    tag=document.createElement("span"); tag.className="tag alert"; tag.title="Немає електродвигуна, і номер не вказано"; tag.textContent="⚠ без двигуна і номера";
-    d.querySelector(".fseg").after(tag);
-  }else if(!show&&tag){tag.remove()}
+  if(m.missing&&!tag){tag=document.createElement("span");tag.className="tag alert";tag.title=ALERT_TITLE;tag.textContent=ALERT_TXT;d.querySelector(".ptags").prepend(tag)}
+  else if(!m.missing&&tag)tag.remove();
 }
 function pcardHtml(inv,e){
-  const linked=items[inv], list=e.photos||[], meta=flags[inv]||{}, fl=meta.status;
-  const pump=isPump(e.name), hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
-  const dup=pump&&!hasMotor?motorDupInv(inv,meta.motorNo):null;
-  const noMotorNoNo=pump&&!hasMotor&&!String(meta.motorNo||"").trim();
+  const linked=items[inv], list=e.photos||[], meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e);
   return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
-      <span class="fseg" title="Позначка">
-        <button class="fbtn ok" data-flagbtn="green" data-inv="${esc(inv)}" aria-pressed="${fl==="green"}" aria-label="Є"></button>
-        <button class="fbtn warn" data-flagbtn="yellow" data-inv="${esc(inv)}" aria-pressed="${fl==="yellow"}" aria-label="Потрібно перевірити"></button>
-        <button class="fbtn bad" data-flagbtn="red" data-inv="${esc(inv)}" aria-pressed="${fl==="red"}" aria-label="Немає"></button>
-        <button class="fbtn purple" data-flagbtn="purple" data-inv="${esc(inv)}" aria-pressed="${fl==="purple"}" aria-label="На списання"></button>
-      </span>
-      ${noMotorNoNo?'<span class="tag alert" title="Немає електродвигуна, і номер не вказано">⚠ без двигуна і номера</span>':""}
-      <span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</summary>
+      <span class="fseg" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
+      <span class="ptags">${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
     <div class="pbody">
       ${e.rah?`<div class="kv">
         <div><small>Рах. обліку</small><b class="num">${esc(e.rah)}</b></div>
@@ -691,26 +709,43 @@ function pcardHtml(inv,e){
       </div>`:'<div class="sub">Немає даних з відомості — лише фото за номером.</div>'}
       ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(photoUrl(p))}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
       <div class="f full"><label for="pd-${esc(inv)}">Опис позиції</label><textarea id="pd-${esc(inv)}" data-pf="desc" data-pinv="${esc(inv)}" placeholder="Нотатки, стан, особливості…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
-      ${pump?`<div class="f full">
-        <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" data-pmotor="${esc(inv)}" ${hasMotor?"checked":""}> Є електродвигун</label>
-        <div data-motorwrap="${esc(inv)}" ${hasMotor?"hidden":""}>
+      ${m.pump?`<div class="f full">
+        <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" data-pmotor="${esc(inv)}" ${m.hasMotor?"checked":""}> Є електродвигун</label>
+        <div data-motorwrap="${esc(inv)}" ${m.hasMotor?"hidden":""}>
           <label for="pm-${esc(inv)}" style="display:block;margin-top:6px">Номенклатурний/інвентарний № електродвигуна (знятий окремо)</label>
           <input id="pm-${esc(inv)}" data-pf="motorNo" data-pinv="${esc(inv)}" value="${esc(meta.motorNo||"")}" placeholder="напр. 1234567">
-          <div class="note bad" data-motorwarn="${esc(inv)}" ${dup?"":"hidden"} style="margin-top:6px">Цей номер вже вказано для інв. № ${esc(dup||"")}!</div>
+          <div class="note bad" data-motorwarn="${esc(inv)}" ${m.dup?"":"hidden"} style="margin-top:6px">Цей номер вже вказано для інв. № ${esc(m.dup||"")}!</div>
         </div>
       </div>`:""}
     </div>
   </details>`;
 }
+/* фільтр за позначкою: "" усі · green/yellow/red/purple · none без позначки · nomotor насоси без двигуна і номера */
+function cardMatches(inv,e,s){
+  if(s&&!(inv.includes(s)||String(e.name||"").toLowerCase().includes(s)))return false;
+  if(!fFlag)return true;
+  const st=(flags[inv]||{}).status;
+  if(fFlag==="none")return !st;
+  if(fFlag==="nomotor")return motorState(inv,e).missing;
+  return st===fFlag;
+}
+function renderPhotoFilters(){
+  const n={all:0,none:0,nomotor:0,green:0,yellow:0,red:0,purple:0};
+  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++}
+  const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
+  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""]];
+  $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
+}
 function renderPhotoList(){
   const L=$("#photo-list"), entries=Object.entries(catalog);
   $("#cnt-photos").textContent=entries.length;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
-  if(!entries.length){L.innerHTML='<div class="empty">Довідник фото не завантажено. Виконайте <code>python build_photos.py</code> і відкрийте застосунок через <code>npm run serve</code>.</div>';return}
+  if(!entries.length){$("#f-pflag").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
+  renderPhotoFilters();
   const s=fPhoto.trim().toLowerCase();
-  const rows=entries.filter(([inv,e])=>!s||inv.includes(s)||String(e.name||"").toLowerCase().includes(s)).sort((a,b)=>a[0].localeCompare(b[0]));
+  const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
   const focus=document.activeElement, fInv=focus&&focus.dataset?focus.dataset.pinv:null, fField=focus&&focus.dataset?focus.dataset.pf:null;
-  L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e)).join(""):'<div class="empty">Нічого не знайдено.</div>';
+  L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e)).join(""):'<div class="empty">Под фильтр ничего не попало.</div>';
   for(const d of L.querySelectorAll("details[data-inv]"))if(openSet.has(d.dataset.inv))d.open=true;
   if(fInv&&fField){const el=L.querySelector(`[data-pinv="${CSS.escape(fInv)}"][data-pf="${CSS.escape(fField)}"]`);if(el){el.focus();const v=el.value;el.setSelectionRange&&el.setSelectionRange(v.length,v.length)}}
 }
@@ -721,12 +756,13 @@ async function savePhotoMeta(inv,patch){
   try{ await db.doc(`photoFlags/${inv}`).update({...patch,updatedAt:new Date().toISOString()}) }
   catch(e){ try{ await db.doc(`photoFlags/${inv}`).set({...next,updatedAt:new Date().toISOString()}) }catch(e2){ toast("Не вдалося зберегти") } }
 }
-function setFlag(inv,color){ renderPhotoListFlagOnly(inv,color); savePhotoMeta(inv,{status:color||null}) }
-function renderPhotoListFlagOnly(inv,color){
+/* зміна кольору: патчимо лише цю картку (без перерендеру списку, щоб картка не зникала з-під пальця при активному фільтрі) */
+function setFlag(inv,color){
   flags={...flags,[inv]:{...(flags[inv]||{}),status:color||null}};
-  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(!d)return;
-  d.className="pcard"+(color?" flag-"+color:"");
-  d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color));
+  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`);
+  if(d){d.className="pcard"+(color?" flag-"+color:"");d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color))}
+  renderPhotoFilters();
+  savePhotoMeta(inv,{status:color||null});
 }
 const pmq={};
 function savePhotoMetaDebounced(inv,patch){
@@ -772,6 +808,7 @@ document.addEventListener("click",async e=>{
   if(t.closest("#lb-next")){lbStep(1);return}
   const sb=t.closest("[data-stat]"); if(sb){showTab("items");fStatus=sb.dataset.stat;renderFilters();renderList();return}
   const fs=t.closest("[data-fs]"); if(fs){fStatus=fs.dataset.fs;renderFilters();renderList();return}
+  const pf=t.closest("[data-pflag]"); if(pf){fFlag=pf.dataset.pflag;renderPhotoList();return}
   const fr=t.closest("[data-fr]"); if(fr){fReq=fr.dataset.fr;renderReqs();return}
   if(t.matches("[data-sel]")){const v=t.dataset.sel;t.checked?sel.add(v):sel.delete(v);renderList();return}
   if(t.closest(".c-chk"))return;
@@ -837,24 +874,13 @@ document.addEventListener("input",e=>{
   if(t.dataset.cf&&openInv){const i=+t.closest("[data-ci]").dataset.ci;const cols=[...(items[openInv].colored||[])];cols[i]={...cols[i],[t.dataset.cf]:t.dataset.cf==="kg"?num(t.value):t.value};items[openInv]={...items[openInv],colored:cols};$("#calc").innerHTML=calcHtml(items[openInv]);save(`items/${openInv}`,{colored:cols},"Сохранено");return}
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
-  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf,v=t.value;savePhotoMetaDebounced(inv,{[k]:v});
-    if(k==="motorNo"){const dup=motorDupInv(inv,v);const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
-      if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}
-      updateAlertTag(inv)}
-    return}
+  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"){refreshMotorUi(inv);renderPhotoFilters()}return}
 });
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="f-route"){fRoute=t.value;renderList();return}
   if(t.id==="f-owner"){fOwner=t.value;renderList();return}
-  if(t.dataset.pmotor){const inv=t.dataset.pmotor,has=t.checked;
-    const wrap=document.querySelector(`[data-motorwrap="${CSS.escape(inv)}"]`); if(wrap)wrap.hidden=has;
-    savePhotoMeta(inv,{hasMotor:has});
-    const meta=flags[inv]||{}, dup=!has?motorDupInv(inv,meta.motorNo):null;
-    const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
-    if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}
-    updateAlertTag(inv);
-    return}
+  if(t.dataset.pmotor){const inv=t.dataset.pmotor;savePhotoMeta(inv,{hasMotor:t.checked});refreshMotorUi(inv);renderPhotoFilters();return}
 });
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){if(lb){closeLightbox();return} if(openInv)closeDrawer();return}
@@ -921,17 +947,15 @@ renderStats();renderFilters();renderPhotoList();
   }
   function unlock(){
     var g=document.getElementById("gate"); if(g)g.remove();
-    var src=document.getElementById("app-src");
     var s=document.createElement("script");
-    s.text=src.textContent;
+    s.text=document.getElementById("app-src").textContent;
     document.body.appendChild(s);
   }
   try{ if(localStorage.getItem("spysannia-gate-ok")==="1"){unlock();return} }catch(e){}
   document.getElementById("gate-form").addEventListener("submit",function(e){
     e.preventDefault();
-    var v=document.getElementById("gate-pass").value;
-    sha256hex(v).then(function(hh){
-      if(hh===HASH){ try{localStorage.setItem("spysannia-gate-ok","1")}catch(e){} unlock(); }
+    sha256hex(document.getElementById("gate-pass").value).then(function(h){
+      if(h===HASH){ try{localStorage.setItem("spysannia-gate-ok","1")}catch(e){} unlock(); }
       else{ document.getElementById("gate-err").textContent="Неправильний пароль"; }
     });
   });
