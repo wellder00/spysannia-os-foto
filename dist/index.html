@@ -177,6 +177,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .fbtn.warn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn)}
 .fbtn.bad[aria-pressed="true"]{background:var(--bad);border-color:var(--bad)}
 .fbtn.purple[aria-pressed="true"]{background:var(--purple);border-color:var(--purple)}
+.tag.alert{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:600}
+@keyframes tagBlink{0%,100%{opacity:1}50%{opacity:.3}}
+@media (prefers-reduced-motion:no-preference){.tag.alert{animation:tagBlink 1.1s ease-in-out infinite}}
 .psum{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
 .psum .nm{overflow-wrap:anywhere}
 .pbody{padding:12px;display:flex;flex-direction:column;gap:10px}
@@ -653,10 +656,22 @@ function motorDupInv(inv,no){
   const hit=Object.entries(flags).find(([k,m])=>k!==inv&&m&&String(m.motorNo||"").trim()===v);
   return hit?hit[0]:null;
 }
+function updateAlertTag(inv){
+  const e=catalog[inv]||{}, meta=flags[inv]||{};
+  const pump=isPump(e.name), hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
+  const show=pump&&!hasMotor&&!String(meta.motorNo||"").trim();
+  const d=document.querySelector(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(!d)return;
+  let tag=d.querySelector(".tag.alert");
+  if(show&&!tag){
+    tag=document.createElement("span"); tag.className="tag alert"; tag.title="Немає електродвигуна, і номер не вказано"; tag.textContent="⚠ без двигуна і номера";
+    d.querySelector(".fseg").after(tag);
+  }else if(!show&&tag){tag.remove()}
+}
 function pcardHtml(inv,e){
   const linked=items[inv], list=e.photos||[], meta=flags[inv]||{}, fl=meta.status;
   const pump=isPump(e.name), hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
   const dup=pump&&!hasMotor?motorDupInv(inv,meta.motorNo):null;
+  const noMotorNoNo=pump&&!hasMotor&&!String(meta.motorNo||"").trim();
   return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">
@@ -665,6 +680,7 @@ function pcardHtml(inv,e){
         <button class="fbtn bad" data-flagbtn="red" data-inv="${esc(inv)}" aria-pressed="${fl==="red"}" aria-label="Немає"></button>
         <button class="fbtn purple" data-flagbtn="purple" data-inv="${esc(inv)}" aria-pressed="${fl==="purple"}" aria-label="На списання"></button>
       </span>
+      ${noMotorNoNo?'<span class="tag alert" title="Немає електродвигуна, і номер не вказано">⚠ без двигуна і номера</span>':""}
       <span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</summary>
     <div class="pbody">
       ${e.rah?`<div class="kv">
@@ -823,7 +839,8 @@ document.addEventListener("input",e=>{
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf,v=t.value;savePhotoMetaDebounced(inv,{[k]:v});
     if(k==="motorNo"){const dup=motorDupInv(inv,v);const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
-      if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}}
+      if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}
+      updateAlertTag(inv)}
     return}
 });
 document.addEventListener("change",e=>{
@@ -836,6 +853,7 @@ document.addEventListener("change",e=>{
     const meta=flags[inv]||{}, dup=!has?motorDupInv(inv,meta.motorNo):null;
     const warn=document.querySelector(`[data-motorwarn="${CSS.escape(inv)}"]`);
     if(warn){warn.hidden=!dup;warn.textContent=dup?`Цей номер вже вказано для інв. № ${dup}!`:""}
+    updateAlertTag(inv);
     return}
 });
 document.addEventListener("keydown",e=>{
