@@ -722,20 +722,21 @@ function pcardHtml(inv,e){
     </div>
   </details>`;
 }
-/* фільтр за позначкою: "" усі · green/yellow/red/purple · none без позначки · nomotor насоси без двигуна і номера */
+/* фільтр за позначкою: "" усі · green/yellow/red/purple · none без позначки · nomotor насоси без двигуна і номера · nophoto без фото */
 function cardMatches(inv,e,s){
   if(s&&!(inv.includes(s)||String(e.name||"").toLowerCase().includes(s)))return false;
   if(!fFlag)return true;
   const st=(flags[inv]||{}).status;
   if(fFlag==="none")return !st;
   if(fFlag==="nomotor")return motorState(inv,e).missing;
+  if(fFlag==="nophoto")return !(e.photos||[]).length;
   return st===fFlag;
 }
 function renderPhotoFilters(){
-  const n={all:0,none:0,nomotor:0,green:0,yellow:0,red:0,purple:0};
-  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++}
+  const n={all:0,none:0,nomotor:0,nophoto:0,green:0,yellow:0,red:0,purple:0};
+  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!(e.photos||[]).length)n.nophoto++}
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
-  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""]];
+  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
 }
 function renderPhotoList(){
