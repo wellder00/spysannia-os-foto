@@ -709,6 +709,7 @@ function pcardHtml(inv,e){
         <div><small>Первісна вартість</small><b class="num">${money(e.perv)}</b></div>
         <div><small>Залишкова</small><b class="num">${money(e.zal)}</b></div>
       </div>`:'<div class="sub">Немає даних з відомості — лише фото за номером.</div>'}
+      ${!linked?`<div><button class="btn sm pri" data-addwriteoff="${esc(inv)}">+ Додати до списання</button></div>`:""}
       ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(photoUrl(p))}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
       <div class="f full"><label for="pd-${esc(inv)}">Опис позиції</label><textarea id="pd-${esc(inv)}" data-pf="desc" data-pinv="${esc(inv)}" placeholder="Нотатки, стан, особливості…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
       ${m.pump?`<div class="f full">
@@ -738,6 +739,25 @@ function renderPhotoFilters(){
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
   const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
+}
+/* додає позицію з довідника «Картки ОС» у журнал списання (items) — route визначається з рах. обліку (103 — нерухомість/Міненерго, інакше — центральна комісія) */
+async function addToWriteoff(inv){
+  if(items[inv])return;
+  if(!db){toast("База недоступна в цьому вікні");return}
+  const e=catalog[inv]||{}, meta=flags[inv]||{};
+  const route=e.rah==="103"?"minenergo":"central";
+  const n=Object.values(items).reduce((mx,it)=>Math.max(mx,it.n||0),0)+1;
+  const doc={n,name:e.name||"",date:e.date||"",zav:"",pasp:"",perv:e.perv??0,zn:e.zn??0,zal:e.zal??0,am:e.am??0,
+    rah:e.rah||"",vyt:e.vyt||"",shvv:e.shvv||"",page:null,vedRow:null,route,
+    status:"new",resp:null,mass:null,mainMetal:"",corr:null,corrKg:null,nonmetal:null,nonmetalType:"",
+    colored:[],noWaste:false,defectsList:[],defects:"",defectsEdited:false,character:meta.desc||"",
+    photos:false,notes:"",generatedAt:null,writtenOffAt:null,createdAt:new Date().toISOString()};
+  items={...items,[inv]:{...doc,inv}};
+  render();
+  showTab("items");
+  openDrawer(inv);
+  try{ await db.doc(`items/${inv}`).set(doc); toast("Додано до списання") }
+  catch(err){ toast("Не вдалося зберегти, спробуйте ще раз") }
 }
 function renderPhotoList(){
   const L=$("#photo-list"), entries=Object.entries(catalog);
@@ -804,6 +824,7 @@ document.addEventListener("click",async e=>{
   const t=e.target;
   const tb=t.closest(".tab"); if(tb){showTab(tb.dataset.tab);return}
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
+  const aw=t.closest("[data-addwriteoff]"); if(aw){e.preventDefault();addToWriteoff(aw.dataset.addwriteoff);return}
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
