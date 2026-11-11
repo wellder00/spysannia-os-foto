@@ -1,8 +1,9 @@
 /*
  * Шим window.claude для мобільного дзеркала (GitHub Pages).
  *
- * Той самий контракт, що й dev/claude-shim.js (claude.use("db"/"downloads")), АЛЕ колекція
- * photoFlags (кольорові позначки, опис, електродвигун насосів) іде в реальний Firestore —
+ * Той самий контракт, що й dev/claude-shim.js (claude.use("db"/"downloads")), АЛЕ колекції
+ * photoFlags (кольорові позначки, опис, електродвигун насосів — вкладка «Картки ОС») і
+ * mshpFlags (кольорові позначки — вкладка «Малоцінка») ідуть у реальний Firestore —
  * щоб синхронізуватись між усіма, хто відкриває дзеркало з різних пристроїв.
  *
  * Решта колекцій (items/requests/files/settings) — як і раніше, локальний знімок
@@ -12,7 +13,7 @@
  *
  * FIREBASE_CONFIG нижче — публічний клієнтський apiKey, це НЕ секрет: безпека
  * забезпечується правилами Firestore (дивись firestore.rules у цій же теці), які
- * дозволяють читати/писати лише колекцію photoFlags і нічого більше.
+ * дозволяють читати/писати лише колекції photoFlags і mshpFlags і нічого більше.
  */
 (function () {
   const FIREBASE_CONFIG = {
@@ -128,7 +129,7 @@
     },
   });
 
-  const SYNCED = new Set(["photoFlags"]);
+  const SYNCED = new Set(["photoFlags", "mshpFlags"]);
   const db = {
     collection: (c) => (SYNCED.has(c) ? firestoreCollRef(c) : localCollRef(c)),
     doc: (path) => { const { c, id } = split(path); return SYNCED.has(c) ? firestoreDocRef(c, id) : localDocRef(path); },
@@ -175,5 +176,5 @@
   };
 
   window.claude = { use: async (name) => (name === "db" ? db : name === "downloads" ? downloads : null) };
-  console.info("[mirror-shim] items/requests/files/settings — локально; photoFlags — Firestore (спільно для всіх)");
+  console.info("[mirror-shim] items/requests/files/settings — локально; photoFlags/mshpFlags — Firestore (спільно для всіх)");
 })();

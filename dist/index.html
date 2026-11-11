@@ -203,6 +203,25 @@ button.pill{border:0;font:inherit}
 .lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:26px;padding:10px 16px}
 #lb-prev{left:calc(8px + env(safe-area-inset-left,0px))}#lb-next{right:calc(8px + env(safe-area-inset-right,0px))}
 .lb-cap{color:#fff;text-align:center}
+/* Малоцінка (МШП) — простий список без фото */
+.mrow2{display:grid;grid-template-columns:auto 90px minmax(0,1fr) 70px 90px 90px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line)}
+.mrow2:first-child{border-top:0}
+.mrow2.head{background:var(--sunk);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:500;cursor:default}
+.mrow2:not(.head):hover{background:var(--sunk)}
+.m-name{overflow-wrap:anywhere;min-width:0}
+.mrow2 .r{text-align:right}
+.mrow2.flag-green{background:var(--ok-soft)}
+.mrow2.flag-yellow{background:var(--warn-soft)}
+.mrow2.flag-red{background:var(--bad-soft)}
+.mrow2.flag-purple{background:var(--purple-soft)}
+@media (max-width:720px){
+  .mrow2{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"f n" "f m"}
+  .mrow2.head{display:none}
+  .m-flags{grid-area:f}
+  .m-name{grid-area:n}
+  .m-nom,.m-qty,.m-price,.m-sum{display:none}
+  .mrow2 .c-meta{grid-area:m;display:flex!important;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+}
 @media (max-width:520px){.fgrid,.kv{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:640px){
   /* компактніша шапка — на телефоні головне список, а не заголовок */
@@ -239,6 +258,7 @@ button.pill{border:0;font:inherit}
     <button class="tab" role="tab" data-tab="req" aria-selected="false">Вопросы от Claude <span class="cnt" id="cnt-req">0</span></button>
     <button class="tab" role="tab" data-tab="docs" aria-selected="false">Документы <span class="cnt" id="cnt-docs">0</span></button>
     <button class="tab" role="tab" data-tab="common" aria-selected="false">Общие данные</button>
+    <button class="tab" role="tab" data-tab="mshp" aria-selected="false">Малоценка <span class="cnt" id="cnt-mshp">0</span></button>
   </nav>
 
   <section id="v-items" hidden>
@@ -293,6 +313,15 @@ button.pill{border:0;font:inherit}
       <div class="bar" id="f-pflag"></div>
     </div>
     <div class="stack" id="photo-list"><div class="empty">Загружаю справочник…</div></div>
+  </section>
+
+  <section id="v-mshp" hidden>
+    <p class="sub" style="margin:0 0 12px">Інвентаризаційний опис МШП (малоцінних швидкозношуваних предметів) в експлуатації, дільниця (МВО) 2402. Довідковий список — без фото і без генерації актів.</p>
+    <div class="ptool">
+      <div class="bar"><input id="m-q" class="search" type="search" placeholder="Поиск по названию или номенклатурному №"></div>
+      <div class="bar" id="f-mflag"></div>
+    </div>
+    <div class="list" id="mshp-list"><div class="empty">Загружаю список…</div></div>
   </section>
 </div>
 
@@ -378,8 +407,8 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <a class="btn sm pri" href="${esc(gmailUrl(it,list))}" target="_blank" rel="noopener">2. Відкрити лист у Gmail</a></div>
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
-let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, conn="wait";
-let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", sel=new Set(), openInv=null, lb=null;
+let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, mshp={}, mflags={}, conn="wait";
+let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", fMshp="", fMflag="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>(v==null||v==="")?"—":Number(v).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -805,6 +834,49 @@ function renderLightbox(){
     <div class="lb-cap sub">${esc(lb.inv)}${e.name?" · "+esc(e.name):""} · ${lb.idx+1}/${list.length}</div>`;
 }
 
+/* ---------- малоцінка (МШП) — лише довідниковий список, без фото й генерації актів ---------- */
+function renderMflagFilters(){
+  const n={all:0,none:0,green:0,yellow:0,red:0,purple:0};
+  for(const nom of Object.keys(mshp)){n.all++;const st=(mflags[nom]||{}).status;if(st&&st in n)n[st]++;else n.none++}
+  const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
+  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""]];
+  $("#f-mflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-mflag="${k}" aria-pressed="${fMflag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
+}
+function mshpRowHtml(nom,it){
+  const fl=(mflags[nom]||{}).status;
+  return `<div class="mrow2 ${fl?"flag-"+fl:""}">
+    <span class="fseg m-flags" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-mflagbtn="${c}" data-nom="${esc(nom)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
+    <span class="num m-nom">${esc(nom)}</span>
+    <span class="m-name">${esc(it.name)}</span>
+    <span class="num r m-qty">${kg(it.qty)} ${esc(it.unit)}</span>
+    <span class="num r m-price">${money(it.price)}</span>
+    <span class="num r m-sum">${money(it.sum)}</span>
+    <span class="c-meta"><span class="num">${esc(nom)}</span><span>${kg(it.qty)} ${esc(it.unit)} × ${money(it.price)}</span><span>${money(it.sum)} грн</span></span>
+  </div>`;
+}
+function renderMshpList(){
+  const L=$("#mshp-list"), entries=Object.entries(mshp);
+  $("#cnt-mshp").textContent=entries.length;
+  if(!entries.length){$("#f-mflag").innerHTML="";L.innerHTML='<div class="empty">Довідник МШП не завантажено. Виконайте <code>python build_mshp.py</code>.</div>';return}
+  renderMflagFilters();
+  const s=fMshp.trim().toLowerCase();
+  const rows=entries.filter(([nom,it])=>{
+    if(s&&!(nom.includes(s)||String(it.name||"").toLowerCase().includes(s)))return false;
+    if(!fMflag)return true;
+    const st=(mflags[nom]||{}).status;
+    return fMflag==="none"?!st:st===fMflag;
+  }).sort((a,b)=>a[1].n-b[1].n);
+  const head=`<div class="mrow2 head"><span></span><span>Номенкл. №</span><span>Найменування</span><span class="r">К-сть</span><span class="r">Ціна</span><span class="r">Сума</span></div>`;
+  L.innerHTML=rows.length?head+rows.map(([nom,it])=>mshpRowHtml(nom,it)).join(""):'<div class="empty">Нічого не знайдено.</div>';
+}
+async function setMflag(nom,color){
+  mflags={...mflags,[nom]:{status:color||null}};
+  renderMshpList();
+  if(!db)return;
+  try{ if(color)await db.doc(`mshpFlags/${nom}`).set({status:color,updatedAt:new Date().toISOString()}); else await db.doc(`mshpFlags/${nom}`).delete() }
+  catch(err){ toast("Не вдалося зберегти позначку") }
+}
+
 /* ---------- common ---------- */
 function renderCommon(){
   const F=$("#common-form"); if(F.contains(document.activeElement))return;
@@ -813,9 +885,9 @@ function renderCommon(){
 }
 
 /* ---------- global render ---------- */
-function render(){renderStats();renderFilters();renderList();renderReqs();renderDocs();renderCommon();renderPhotoList();if(openInv)renderDrawer(false)}
+function render(){renderStats();renderFilters();renderList();renderReqs();renderDocs();renderCommon();renderPhotoList();renderMshpList();if(openInv)renderDrawer(false)}
 function showTab(t){tab=t;document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
-  for(const v of["items","req","docs","common","photos"])$("#v-"+v).hidden=v!==t}
+  for(const v of["items","req","docs","common","photos","mshp"])$("#v-"+v).hidden=v!==t}
 
 /* ---------- events ---------- */
 document.addEventListener("click",async e=>{
@@ -824,6 +896,8 @@ document.addEventListener("click",async e=>{
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
   const aw=t.closest("[data-addwriteoff]"); if(aw){e.preventDefault();addToWriteoff(aw.dataset.addwriteoff);return}
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
+  const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,(mflags[nom]||{}).status===c?null:c);return}
+  const mf=t.closest("[data-mflag]"); if(mf){fMflag=mf.dataset.mflag;renderMshpList();return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
   if(t.closest("#lb-prev")){lbStep(-1);return}
@@ -890,6 +964,7 @@ document.addEventListener("input",e=>{
   const t=e.target;
   if(t.id==="q"){fQ=t.value;renderList();return}
   if(t.id==="p-q"){fPhoto=t.value;renderPhotoList();return}
+  if(t.id==="m-q"){fMshp=t.value;renderMshpList();return}
   if(t.dataset.f&&openInv){const k=t.dataset.f;let v=t.value;if(["mass","corr","nonmetal","corrKg"].includes(k))v=num(v);
     if(k==="defects"){items[openInv]={...items[openInv],defects:v,defectsEdited:true};$("#def-hint").textContent="Текст змінено вручну: нові пункти зі списку дописуються в кінець.";$("#d-miss").innerHTML=missHtml(items[openInv]);save(`items/${openInv}`,{defects:v,defectsEdited:true},"Сохранено");renderStats();return}
     items[openInv]={...items[openInv],[k]:v};$("#calc").innerHTML=calcHtml(items[openInv]);$("#d-miss").innerHTML=missHtml(items[openInv]);$("#d-saving").textContent="Сохраняю…";save(`items/${openInv}`,{[k]:v},"Сохранено");return}
@@ -928,10 +1003,14 @@ $("#lightbox").addEventListener("touchend",e=>{
 let ct; function saveCommon(){clearTimeout(ct);ct=setTimeout(async()=>{try{await db.doc("settings/common").set({...common,updatedAt:new Date().toISOString()});$("#common-saving").textContent="Сохранено"}catch(e){$("#common-saving").textContent="Не удалось сохранить"}},600)}
 
 /* ---------- boot ---------- */
-renderStats();renderFilters();renderPhotoList();
+renderStats();renderFilters();renderPhotoList();renderMshpList();
 (async()=>{
   try{const r=await fetch("../data/photos.json");catalog=await r.json()}catch(e){catalog={}}
   renderPhotoList();
+})();
+(async()=>{
+  try{const r=await fetch("../data/mshp.json");mshp=await r.json()}catch(e){mshp={}}
+  renderMshpList();
 })();
 (async()=>{
   try{db=await claude.use("db")}catch(e){db=null}
@@ -946,6 +1025,7 @@ renderStats();renderFilters();renderPhotoList();
   db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
   db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList()},onErr);
+  db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});mflags=n;renderMshpList()},onErr);
 })();
 })();
 </script>
