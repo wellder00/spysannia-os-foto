@@ -754,8 +754,6 @@ async function addToWriteoff(inv){
     photos:false,notes:"",generatedAt:null,writtenOffAt:null,createdAt:new Date().toISOString()};
   items={...items,[inv]:{...doc,inv}};
   render();
-  showTab("items");
-  openDrawer(inv);
   try{ await db.doc(`items/${inv}`).set(doc); toast("Додано до списання") }
   catch(err){ toast("Не вдалося зберегти, спробуйте ще раз") }
 }
