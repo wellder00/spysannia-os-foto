@@ -194,6 +194,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .pbody{padding:12px;display:flex;flex-direction:column;gap:10px}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .pthumb{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:var(--sunk)}
+.pthumbwrap{position:relative;display:block}
+.pdel{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:1px solid rgba(0,0,0,.2);background:rgba(20,20,20,.55);color:#fff;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.pdel.confirm{background:var(--bad)}
+.paddrow{display:flex}
 button.pill{border:0;font:inherit}
 .lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;touch-action:pan-y}
 .lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px;touch-action:pinch-zoom}
@@ -329,6 +333,7 @@ button.pill{border:0;font:inherit}
 <aside class="drawer" id="drawer" hidden aria-label="Карточка позиции"></aside>
 <div class="toast" id="toast" hidden></div>
 <div class="lightbox" id="lightbox" hidden></div>
+<datalist id="motor-candidates"></datalist>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
@@ -407,7 +412,7 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <a class="btn sm pri" href="${esc(gmailUrl(it,list))}" target="_blank" rel="noopener">2. Відкрити лист у Gmail</a></div>
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
-let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, mshp={}, mflags={}, conn="wait";
+let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, mshp={}, mflags={}, extraPhotos={}, conn="wait";
 let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", fMshp="", fMflag="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -706,6 +711,17 @@ function motorDupInv(inv,no){
   const hit=Object.entries(flags).find(([k,m])=>k!==inv&&m&&String(m.motorNo||"").trim()===v);
   return hit?hit[0]:null;
 }
+/* двигуни-кандидати для підказки при вводі номера знятого двигуна: позиції зі словом "двигун"
+   в назві і з довідника ОЗ (catalog), і з довідника МШП (mshp) — один спільний <datalist> */
+function motorCandidates(){
+  const out=[];
+  for(const [inv,e] of Object.entries(catalog))if(/двигун/i.test(e.name||""))out.push([inv,e.name]);
+  for(const [nom,it] of Object.entries(mshp))if(/двигун/i.test(it.name||""))out.push([nom,it.name]);
+  return out.sort((a,b)=>a[1].localeCompare(b[1]));
+}
+function renderMotorCandidates(){
+  $("#motor-candidates").innerHTML=motorCandidates().map(([no,name])=>`<option value="${esc(no)}">${esc(name)}</option>`).join("");
+}
 /* стан «електродвигун» для насоса: є/немає, номер знятого двигуна, дублікат номера, чи бракує номера */
 function motorState(inv,e){
   const meta=flags[inv]||{}, pump=isPump(e.name);
@@ -725,8 +741,19 @@ function refreshMotorUi(inv){
   if(m.missing&&!tag){tag=document.createElement("span");tag.className="tag alert";tag.title=ALERT_TITLE;tag.textContent=ALERT_TXT;d.querySelector(".ptags").prepend(tag)}
   else if(!m.missing&&tag)tag.remove();
 }
+/* static — фото "запечені" у збірку (ОС/Карточки ОС, з git); dynamic — додані з телефону/комп'ютера
+   через cardPhotos (Firestore), видаляються насправді. Static не можна стерти з диска з телефону —
+   "видалення" ховає шлях у photoFlags.hiddenPhotos (tombstone), оригінал лишається в репо. */
+function cardPhotoList(inv,e){
+  const hidden=new Set((flags[inv]||{}).hiddenPhotos||[]);
+  const stat=(e.photos||[]).filter(p=>!hidden.has(p)).map(p=>({src:photoUrl(p),kind:"static",key:p}));
+  const dyn=Object.entries(extraPhotos).filter(([,p])=>p.inv===inv)
+    .sort((a,b)=>String(a[1].addedAt||"").localeCompare(String(b[1].addedAt||"")))
+    .map(([id,p])=>({src:`data:${p.mime||"image/jpeg"};base64,${p.b64}`,kind:"dynamic",key:id}));
+  return [...stat,...dyn];
+}
 function pcardHtml(inv,e){
-  const linked=items[inv], list=e.photos||[], meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e);
+  const linked=items[inv], list=cardPhotoList(inv,e), meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e);
   return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
@@ -739,13 +766,14 @@ function pcardHtml(inv,e){
         <div><small>Залишкова</small><b class="num">${money(e.zal)}</b></div>
       </div>`:'<div class="sub">Немає даних з відомості — лише фото за номером.</div>'}
       ${!linked?`<div><button class="btn sm pri" data-addwriteoff="${esc(inv)}">+ Додати до списання</button></div>`:""}
-      ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(photoUrl(p))}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
+      ${list.length?`<div class="pgrid">${list.map((p,i)=>`<span class="pthumbwrap"><img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}"><button type="button" class="pdel" data-delphoto="${esc(p.key)}" data-delkind="${p.kind}" data-delinv="${esc(inv)}" title="Видалити фото">✕</button></span>`).join("")}</div>`:""}
+      <div class="paddrow"><label class="btn sm" for="pf-${esc(inv)}">📷 Додати фото</label><input type="file" accept="image/*" id="pf-${esc(inv)}" data-addphoto="${esc(inv)}" hidden></div>
       <div class="f full"><label for="pd-${esc(inv)}">Опис позиції</label><textarea id="pd-${esc(inv)}" data-pf="desc" data-pinv="${esc(inv)}" placeholder="Нотатки, стан, особливості…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
       ${m.pump?`<div class="f full">
         <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px"><input type="checkbox" data-pmotor="${esc(inv)}" ${m.hasMotor?"checked":""}> Є електродвигун</label>
         <div data-motorwrap="${esc(inv)}" ${m.hasMotor?"hidden":""}>
           <label for="pm-${esc(inv)}" style="display:block;margin-top:6px">Номенклатурний/інвентарний № електродвигуна (знятий окремо)</label>
-          <input id="pm-${esc(inv)}" data-pf="motorNo" data-pinv="${esc(inv)}" value="${esc(meta.motorNo||"")}" placeholder="напр. 1234567">
+          <input id="pm-${esc(inv)}" data-pf="motorNo" data-pinv="${esc(inv)}" list="motor-candidates" value="${esc(meta.motorNo||"")}" placeholder="почніть вводити номер або назву…">
           <div class="note bad" data-motorwarn="${esc(inv)}" ${m.dup?"":"hidden"} style="margin-top:6px">Цей номер вже вказано для інв. № ${esc(m.dup||"")}!</div>
         </div>
       </div>`:""}
@@ -759,12 +787,12 @@ function cardMatches(inv,e,s){
   const st=(flags[inv]||{}).status;
   if(fFlag==="none")return !st;
   if(fFlag==="nomotor")return motorState(inv,e).missing;
-  if(fFlag==="nophoto")return !(e.photos||[]).length;
+  if(fFlag==="nophoto")return !cardPhotoList(inv,e).length;
   return st===fFlag;
 }
 function renderPhotoFilters(){
   const n={all:0,none:0,nomotor:0,nophoto:0,green:0,yellow:0,red:0,purple:0};
-  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!(e.photos||[]).length)n.nophoto++}
+  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!cardPhotoList(inv,e).length)n.nophoto++}
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
   const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
@@ -791,7 +819,7 @@ function renderPhotoList(){
   $("#cnt-photos").textContent=entries.length;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
   if(!entries.length){$("#f-pflag").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
-  renderPhotoFilters();
+  renderPhotoFilters();renderMotorCandidates();
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
   const focus=document.activeElement, fInv=focus&&focus.dataset?focus.dataset.pinv:null, fField=focus&&focus.dataset?focus.dataset.pf:null;
@@ -819,18 +847,67 @@ function savePhotoMetaDebounced(inv,patch){
   flags={...flags,[inv]:{...(flags[inv]||{}),...patch}};
   clearTimeout(pmq[inv]); pmq[inv]=setTimeout(()=>savePhotoMeta(inv,patch),500);
 }
+/* ---------- додавання/видалення фото з телефону чи комп'ютера (синхронізується через Firestore cardPhotos) ---------- */
+function genId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)})}
+/* стискаємо на клієнті, щоб влізти в ліміт документа Firestore (1 МіБ): ціль — base64 < ~900 КБ */
+async function compressImage(file,maxDim=1600){
+  const bitmap=await createImageBitmap(file,{imageOrientation:"from-image"});
+  let w=bitmap.width,h=bitmap.height;
+  if(Math.max(w,h)>maxDim){const s=maxDim/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s)}
+  const cv=document.createElement("canvas"); cv.width=w;cv.height=h;
+  cv.getContext("2d").drawImage(bitmap,0,0,w,h);
+  let blob=null;
+  for(let q=0.72;q>0.35;q-=0.12){
+    blob=await new Promise(res=>cv.toBlob(res,"image/jpeg",q));
+    if(blob.size<650*1024)break;
+  }
+  return {b64:await blobToB64(blob),mime:"image/jpeg"};
+}
+async function addCardPhoto(inv,file){
+  if(!db){toast("База недоступна в цьому вікні");return}
+  if(!/^image\//.test(file.type)){toast("Можна завантажувати лише зображення");return}
+  toast("Стискаю і завантажую фото…");
+  let packed;
+  try{ packed=await compressImage(file) }catch(e){ toast("Не вдалося обробити фото"); return }
+  const id=genId(), doc={inv,b64:packed.b64,mime:packed.mime,addedAt:new Date().toISOString()};
+  extraPhotos={...extraPhotos,[id]:doc};
+  renderPhotoList();
+  try{ await db.doc(`cardPhotos/${id}`).set(doc); toast("Фото додано") }
+  catch(e){ const n={...extraPhotos}; delete n[id]; extraPhotos=n; renderPhotoList(); toast("Не вдалося завантажити фото") }
+}
+async function deleteCardPhoto(inv,kind,key){
+  if(kind==="dynamic"){
+    const n={...extraPhotos}; delete n[key]; extraPhotos=n; renderPhotoList();
+    if(!db)return;
+    try{ await db.doc(`cardPhotos/${key}`).delete() }catch(e){ toast("Не вдалося видалити фото") }
+  } else {
+    const hidden=[...new Set([...((flags[inv]||{}).hiddenPhotos||[]),key])];
+    savePhotoMeta(inv,{hiddenPhotos:hidden});
+    renderPhotoList();
+  }
+}
+/* подвійне підтвердження видалення фото (без confirm() — заборонено в sandbox claude.ai) */
+const delConfirm=new Set();
+function askDelPhoto(btn,inv,kind,key){
+  const token=kind+":"+key;
+  if(delConfirm.has(token)){ delConfirm.delete(token); deleteCardPhoto(inv,kind,key); return }
+  delConfirm.add(token);
+  btn.classList.add("confirm"); btn.title="Натисніть ще раз, щоб видалити";
+  setTimeout(()=>{ if(delConfirm.has(token)){ delConfirm.delete(token); btn.classList.remove("confirm"); btn.title="Видалити фото" } },3000);
+}
 function openLightbox(inv,idx){lb={inv,idx:+idx};renderLightbox()}
 function closeLightbox(){lb=null;$("#lightbox").hidden=true}
-function lbStep(d){if(!lb)return;const list=(catalog[lb.inv]||{}).photos||[];if(!list.length)return;lb.idx=(lb.idx+d+list.length)%list.length;renderLightbox()}
+function lbStep(d){if(!lb)return;const list=cardPhotoList(lb.inv,catalog[lb.inv]||{});if(!list.length)return;lb.idx=(lb.idx+d+list.length)%list.length;renderLightbox()}
 function renderLightbox(){
   const box=$("#lightbox");
   if(!lb){box.hidden=true;return}
-  const e=catalog[lb.inv]||{}, list=e.photos||[];
+  const e=catalog[lb.inv]||{}, list=cardPhotoList(lb.inv,e);
   if(!list.length){closeLightbox();return}
   box.hidden=false;
   box.innerHTML=`<button class="btn sm" id="lb-close" aria-label="Закрити">Закрити ✕</button>
     ${list.length>1?'<button class="btn lb-nav" id="lb-prev" aria-label="Попереднє фото">‹</button><button class="btn lb-nav" id="lb-next" aria-label="Наступне фото">›</button>':""}
-    <img src="${esc(photoUrl(list[lb.idx]))}" alt="фото ${esc(lb.inv)}">
+    <img src="${esc(list[lb.idx].src)}" alt="фото ${esc(lb.inv)}">
     <div class="lb-cap sub">${esc(lb.inv)}${e.name?" · "+esc(e.name):""} · ${lb.idx+1}/${list.length}</div>`;
 }
 
@@ -898,6 +975,7 @@ document.addEventListener("click",async e=>{
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,(mflags[nom]||{}).status===c?null:c);return}
   const mf=t.closest("[data-mflag]"); if(mf){fMflag=mf.dataset.mflag;renderMshpList();return}
+  const dp=t.closest("[data-delphoto]"); if(dp){e.preventDefault();askDelPhoto(dp,dp.dataset.delinv,dp.dataset.delkind,dp.dataset.delphoto);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
   if(t.closest("#lb-prev")){lbStep(-1);return}
@@ -978,6 +1056,7 @@ document.addEventListener("change",e=>{
   if(t.id==="f-route"){fRoute=t.value;renderList();return}
   if(t.id==="f-owner"){fOwner=t.value;renderList();return}
   if(t.dataset.pmotor){const inv=t.dataset.pmotor;savePhotoMeta(inv,{hasMotor:t.checked});refreshMotorUi(inv);renderPhotoFilters();return}
+  if(t.dataset.addphoto){const inv=t.dataset.addphoto,f=t.files&&t.files[0];t.value="";if(f)addCardPhoto(inv,f);return}
 });
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){if(lb){closeLightbox();return} if(openInv)closeDrawer();return}
@@ -1026,6 +1105,7 @@ renderStats();renderFilters();renderPhotoList();renderMshpList();
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
   db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList()},onErr);
   db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});mflags=n;renderMshpList()},onErr);
+  db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;renderPhotoList()},onErr);
 })();
 })();
 </script>
