@@ -192,6 +192,19 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .fbtn,.pdel,.chip,.tab,.pcard>summary,.totop{-webkit-tap-highlight-color:transparent}
 .chip:active,.tab:active,.totop:active{opacity:.7}
 .tag.alert{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:600}
+/* двигун, вказаний на якомусь насосі, «світиться» синім (поверх кольорової позначки, не замість неї) */
+.pcard.used{box-shadow:0 0 0 2px var(--work),0 0 14px color-mix(in srgb,var(--work) 45%,transparent)}
+.pcard.used:not([class*="flag-"])>summary{background:var(--work-soft)}
+.mrow2.used{box-shadow:inset 4px 0 0 var(--work)}
+.mrow2.used:not([class*="flag-"]){background:var(--work-soft)}
+.tag.used{background:var(--work-soft);color:var(--work);border-color:var(--work);cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:2px 8px}
+.tag.used.bad{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.mtags{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle}
+.compat{border-radius:6px;padding:8px 10px;font-size:13px;margin-top:8px;border:1px solid var(--line);border-left-width:4px}
+.compat.ok{background:var(--ok-soft);border-color:var(--ok)}
+.compat.info,.compat.warn{background:var(--warn-soft);border-color:var(--warn)}
+.compat.bad{background:var(--bad-soft);border-color:var(--bad)}
+.compat ul{margin:4px 0 2px;padding-left:18px}
 @keyframes tagBlink{0%,100%{opacity:1}50%{opacity:.3}}
 @media (prefers-reduced-motion:no-preference){.tag.alert{animation:tagBlink 1.1s ease-in-out infinite}}
 .psum{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
@@ -251,7 +264,8 @@ button.pill{border:0;font:inherit}
   .pcard>summary{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"n n" "f t";row-gap:8px;column-gap:8px}
   .pcard>summary .psum{grid-area:n}
   .pcard>summary .fseg{grid-area:f}
-  .pcard>summary .ptags{grid-area:t}
+  .pcard>summary .ptags{grid-area:t;min-width:0}
+  .ptags .tag.used,.ptags .tag.alert{white-space:normal;text-align:right}
 }
 @media (max-width:480px){
   .lightbox img{max-width:96vw;max-height:72vh}
@@ -734,7 +748,7 @@ function motorCandidates(){
   return out.sort((a,b)=>a[1].localeCompare(b[1]));
 }
 function renderMotorCandidates(){
-  $("#motor-candidates").innerHTML=motorCandidates().map(([no,name])=>`<option value="${esc(no)}">${esc(name)}</option>`).join("");
+  $("#motor-candidates").innerHTML=motorCandidates().map(([no,name])=>`<option value="${esc(no)}">${esc(name)}${usage[no]?` — вже на насосі ${esc(usage[no].join(", "))}`:""}</option>`).join("");
 }
 /* стан «електродвигун» для насоса: є/немає, номер знятого двигуна, дублікат номера, чи бракує номера */
 function motorState(inv,e){
@@ -742,6 +756,72 @@ function motorState(inv,e){
   const hasMotor=meta.hasMotor!==undefined?meta.hasMotor:defaultHasMotor(e.name);
   const no=String(meta.motorNo||"").trim();
   return {pump,hasMotor,no,dup:pump&&!hasMotor?motorDupInv(inv,no):null,missing:pump&&!hasMotor&&!no};
+}
+/* ---------- сумісність насос ↔ двигун: потужність (кВт) і клас обертів (3000/1500/1000/750) ----------
+   Дані беруться з тексту: назва + «Опис позиції» (туди розшифровані картки). Для двигуна без явних
+   обертів — з маркування (4АМ160S4, МТН-411-6, АО2-81/4: остання цифра — число полюсів → 6000/полюси). */
+const toNum=s=>parseFloat(String(s).replace(",","."));
+function parseKw(t){
+  t=String(t||"");
+  let m=t.match(/(\d+(?:[.,]\d+)?)\s*к[вw]т?(?![a-zа-яіїє])/iu); if(m)return toNum(m[1]);
+  m=t.match(/(\d+(?:[.,]\d+)?)\s*\/\s*(?:3000|1500|1000|750)(?!\d)/); return m?toNum(m[1]):null;
+}
+function parseRpm(t){
+  t=String(t||"");
+  let m=t.match(/(\d{3,4})\s*об/iu); if(m)return +m[1];
+  m=t.match(/\d\s*\/\s*(3000|1500|1000|750)(?!\d)/); if(m)return +m[1];
+  for(const re of[/\d{2,3}\s?[SMLСМВBАA]{1,2}[\s-]?(\d{1,2})(?!\d)/gu,/\d{2,3}[-\/](\d{1,2})(?!\d)/g])
+    for(const x of t.matchAll(re)){const p=+x[1];if([2,4,6,8,10,12].includes(p))return 6000/p}
+  return null;
+}
+function rpmClass(n){return !n?null:n>=2500?3000:n>=1300?1500:n>=900?1000:n>=650?750:n>=550?600:null}
+function motorInfo(no){
+  no=String(no||"").trim(); if(!no)return null;
+  const c=catalog[no];
+  if(c)return {src:"ОЗ",name:c.name||"",text:`${c.name||""} ${(flags[no]||{}).desc||""}`,notMotor:!/двигун/i.test(c.name||"")};
+  if(mshp[no])return {src:"МШП",name:mshp[no].name,text:mshp[no].name,notMotor:!/двигун/i.test(mshp[no].name||"")};
+  return null;
+}
+const CMP_RANK={ok:0,info:1,warn:2,bad:3}, CMP_TITLE={ok:"Сумісні",info:"Даних недостатньо",warn:"Перевірте",bad:"Несумісні"};
+function motorCompat(pumpInv){
+  const e=catalog[pumpInv]||{}, m=motorState(pumpInv,e);
+  if(!m.pump||m.hasMotor||!m.no)return null;
+  const mi=motorInfo(m.no);
+  if(!mi)return {level:"warn",motor:null,lines:["Двигун з таким номером не знайдено в довідниках ОЗ і МШП."]};
+  const p={kw:parseKw(`${(flags[pumpInv]||{}).desc||""} ${e.name||""}`),rpm:parseRpm(`${(flags[pumpInv]||{}).desc||""} ${e.name||""}`)};
+  const d={kw:parseKw(mi.text),rpm:parseRpm(mi.text)};
+  let level="ok"; const lines=[], up=l=>{if(CMP_RANK[l]>CMP_RANK[level])level=l};
+  if(mi.notMotor){up("warn");lines.push("Ця позиція не схожа на електродвигун.")}
+  if(p.rpm&&d.rpm){
+    if(rpmClass(p.rpm)!==rpmClass(d.rpm)){up("bad");lines.push(`Оберти не збігаються: насос ${p.rpm} об/хв, двигун ${d.rpm} об/хв.`)}
+    else lines.push(`Оберти: насос ${p.rpm}, двигун ${d.rpm} об/хв ✓`);
+  } else {up("info");lines.push(`Немає даних про оберти ${!p.rpm?"насоса":"двигуна"}.`)}
+  if(p.kw&&d.kw){
+    if(d.kw<p.kw*0.95){up("bad");lines.push(`Двигун слабший за потрібний: ${d.kw} кВт < ${p.kw} кВт.`)}
+    else if(d.kw>p.kw*1.6){up("warn");lines.push(`Двигун значно потужніший: ${d.kw} кВт для ${p.kw} кВт — зайва витрата енергії.`)}
+    else lines.push(`Потужність: ${d.kw} кВт для ${p.kw} кВт ✓`);
+  } else {up("info");lines.push(`Немає даних про потужність ${!p.kw?"насоса":"двигуна"}.`)}
+  return {level,motor:mi,lines,needPump:!p.kw||!p.rpm};
+}
+function compatHtml(inv){
+  const c=motorCompat(inv); if(!c)return "";
+  return `<div class="compat ${c.level}"><b>${CMP_TITLE[c.level]}</b>${c.motor?` · ${esc(c.motor.src)}: ${esc(c.motor.name)}`:""}
+    <ul>${c.lines.map(l=>`<li>${esc(l)}</li>`).join("")}</ul>
+    ${c.needPump?'<small class="sub">Допишіть в «Опис позиції» насоса потужність і оберти, напр. «30 кВт, 2900 об/хв».</small>':""}</div>`;
+}
+/* номер двигуна → інв. номери насосів, на яких він вказаний (насос без власного двигуна) */
+let usage={};
+function computeUsage(){
+  const u={};
+  for(const [inv,e] of Object.entries(catalog)){const m=motorState(inv,e);if(m.pump&&!m.hasMotor&&m.no)(u[m.no]=u[m.no]||[]).push(inv)}
+  usage=u;
+}
+function usedTags(no){
+  return (usage[no]||[]).map(p=>{const c=motorCompat(p);return `<button type="button" class="tag used${c&&c.level==="bad"?" bad":""}" data-gotocard="${esc(p)}" title="Відкрити картку насоса">🔗 на насосі ${esc(p)}${c&&c.level==="bad"?" · несумісний":""}</button>`}).join("");
+}
+function gotoCard(inv){
+  showTab("photos"); fFlag=""; fPhoto=inv; $("#p-q").value=inv; renderPhotoList();
+  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(d){pendingOpen=inv;d.open=true}
 }
 const FLAGS=[["green","ok","Есть"],["yellow","warn","Проверить"],["red","bad","Нет"],["purple","purple","На списание"]];
 const ALERT_TXT="⚠ без двигуна і номера", ALERT_TITLE="Немає електродвигуна, і номер не вказано";
@@ -751,6 +831,10 @@ function refreshMotorUi(inv){
   const m=motorState(inv,catalog[inv]||{});
   const wrap=d.querySelector("[data-motorwrap]"); if(wrap)wrap.hidden=m.hasMotor;
   const warn=d.querySelector("[data-motorwarn]"); if(warn){warn.hidden=!m.dup;warn.textContent=m.dup?`Цей номер вже вказано для інв. № ${m.dup}!`:""}
+  const cb=d.querySelector("[data-motorcompat]"); if(cb)cb.innerHTML=compatHtml(inv);
+  const bad=(motorCompat(inv)||{}).level==="bad", ct=d.querySelector("[data-cmptag]");
+  if(bad&&!ct){const s=document.createElement("span");s.className="tag alert";s.dataset.cmptag="";s.textContent="⚠ несумісний двигун";d.querySelector(".ptags").prepend(s)}
+  else if(!bad&&ct)ct.remove();
   let tag=d.querySelector(".tag.alert");
   if(m.missing&&!tag){tag=document.createElement("span");tag.className="tag alert";tag.title=ALERT_TITLE;tag.textContent=ALERT_TXT;d.querySelector(".ptags").prepend(tag)}
   else if(!m.missing&&tag)tag.remove();
@@ -767,11 +851,11 @@ function cardPhotoList(inv,e){
   return [...stat,...dyn];
 }
 function pcardHtml(inv,e){
-  const linked=items[inv], list=cardPhotoList(inv,e), meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e);
-  return `<details class="pcard ${fl?"flag-"+fl:""}" data-inv="${esc(inv)}">
+  const linked=items[inv], list=cardPhotoList(inv,e), meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
+  return `<details class="pcard ${fl?"flag-"+fl:""}${used?" used":""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
-      <span class="ptags">${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
+      <span class="ptags">${usedTags(inv)}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
     <div class="pbody">
       ${e.rah?`<div class="kv">
         <div><small>Рах. обліку</small><b class="num">${esc(e.rah)}</b></div>
@@ -789,8 +873,11 @@ function pcardHtml(inv,e){
           <label for="pm-${esc(inv)}" style="display:block;margin-top:6px">Номенклатурний/інвентарний № електродвигуна (знятий окремо)</label>
           <input id="pm-${esc(inv)}" data-pf="motorNo" data-pinv="${esc(inv)}" list="motor-candidates" value="${esc(meta.motorNo||"")}" placeholder="почніть вводити номер або назву…">
           <div class="note bad" data-motorwarn="${esc(inv)}" ${m.dup?"":"hidden"} style="margin-top:6px">Цей номер вже вказано для інв. № ${esc(m.dup||"")}!</div>
+          <div data-motorcompat="${esc(inv)}">${compatHtml(inv)}</div>
         </div>
       </div>`:""}
+      ${used?usage[inv].map(p=>`<div class="compat ${(motorCompat(p)||{}).level||"info"}"><b>Встановлено на насос інв. № ${esc(p)}</b> · ${esc((catalog[p]||{}).name||"")}
+        <ul>${((motorCompat(p)||{}).lines||[]).map(l=>`<li>${esc(l)}</li>`).join("")}</ul></div>`).join(""):""}
     </div>
   </details>`;
 }
@@ -833,7 +920,7 @@ function renderPhotoList(){
   $("#cnt-photos").textContent=entries.length;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
   if(!entries.length){$("#f-pflag").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
-  renderPhotoFilters();renderMotorCandidates();
+  computeUsage();renderPhotoFilters();renderMotorCandidates();
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
   const focus=document.activeElement, fInv=focus&&focus.dataset?focus.dataset.pinv:null, fField=focus&&focus.dataset?focus.dataset.pf:null;
@@ -934,11 +1021,11 @@ function renderMflagFilters(){
   $("#f-mflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-mflag="${k}" aria-pressed="${fMflag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
 }
 function mshpRowHtml(nom,it){
-  const fl=(mflags[nom]||{}).status;
-  return `<div class="mrow2 ${fl?"flag-"+fl:""}">
+  const fl=(mflags[nom]||{}).status, used=!!usage[nom];
+  return `<div class="mrow2 ${fl?"flag-"+fl:""}${used?" used":""}">
     <span class="fseg m-flags" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-mflagbtn="${c}" data-nom="${esc(nom)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
     <span class="num m-nom">${esc(nom)}</span>
-    <span class="m-name">${esc(it.name)}</span>
+    <span class="m-name">${esc(it.name)}${used?` <span class="mtags">${usedTags(nom)}</span>`:""}</span>
     <span class="num r m-qty">${kg(it.qty)} ${esc(it.unit)}</span>
     <span class="num r m-price">${money(it.price)}</span>
     <span class="num r m-sum">${money(it.sum)}</span>
@@ -949,7 +1036,7 @@ function renderMshpList(){
   const L=$("#mshp-list"), entries=Object.entries(mshp);
   $("#cnt-mshp").textContent=entries.length;
   if(!entries.length){$("#f-mflag").innerHTML="";L.innerHTML='<div class="empty">Довідник МШП не завантажено. Виконайте <code>python build_mshp.py</code>.</div>';return}
-  renderMflagFilters();
+  computeUsage();renderMflagFilters();
   const s=fMshp.trim().toLowerCase();
   const rows=entries.filter(([nom,it])=>{
     if(s&&!(nom.includes(s)||String(it.name||"").toLowerCase().includes(s)))return false;
@@ -1006,6 +1093,7 @@ document.addEventListener("click",async e=>{
   const t=e.target;
   const tb=t.closest(".tab"); if(tb){showTab(tb.dataset.tab);return}
   if(t.closest("#totop")){scrollTo({top:0,behavior:"smooth"});return}
+  const gc=t.closest("[data-gotocard]"); if(gc){e.preventDefault();gotoCard(gc.dataset.gotocard);return}
   const sm=t.closest("#photo-list .pcard>summary"); if(sm&&!t.closest("button,a,input")&&!sm.parentElement.open)pendingOpen=sm.parentElement.dataset.inv;
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
   const aw=t.closest("[data-addwriteoff]"); if(aw){e.preventDefault();addToWriteoff(aw.dataset.addwriteoff);return}
@@ -1086,7 +1174,7 @@ document.addEventListener("input",e=>{
   if(t.dataset.cf&&openInv){const i=+t.closest("[data-ci]").dataset.ci;const cols=[...(items[openInv].colored||[])];cols[i]={...cols[i],[t.dataset.cf]:t.dataset.cf==="kg"?num(t.value):t.value};items[openInv]={...items[openInv],colored:cols};$("#calc").innerHTML=calcHtml(items[openInv]);save(`items/${openInv}`,{colored:cols},"Сохранено");return}
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
-  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"){refreshMotorUi(inv);renderPhotoFilters()}return}
+  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"||k==="desc"){refreshMotorUi(inv);renderPhotoFilters()}return}
 });
 document.addEventListener("change",e=>{
   const t=e.target;
@@ -1141,7 +1229,7 @@ renderStats();renderFilters();renderPhotoList();renderMshpList();
   db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;render()},onErr);
   db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
-  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList()},onErr);
+  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList();renderMshpList()},onErr);
   db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});mflags=n;renderMshpList()},onErr);
   db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;renderPhotoList()},onErr);
 })();
