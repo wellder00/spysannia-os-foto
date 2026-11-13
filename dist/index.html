@@ -73,6 +73,25 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .row .nm{min-width:0}
 .row .nm div{overflow-wrap:anywhere}
 .row .nm small{color:var(--muted);font-size:12px}
+/* підсвітка позиції кольором позначки з «Карток ОС» (photoFlags) і синім — двигун, вказаний на насосі */
+.row.flag-green{box-shadow:inset 4px 0 0 var(--ok);background:var(--ok-soft)}
+.row.flag-yellow{box-shadow:inset 4px 0 0 var(--warn);background:var(--warn-soft)}
+.row.flag-red{box-shadow:inset 4px 0 0 var(--bad);background:var(--bad-soft)}
+.row.flag-purple{box-shadow:inset 4px 0 0 var(--purple);background:var(--purple-soft)}
+.row.used{box-shadow:inset 4px 0 0 var(--work),inset 0 0 0 1px var(--work)}
+.row.used:not([class*="flag-"]){background:var(--work-soft)}
+.row[class*="flag-"]:hover,.row.used:hover{filter:brightness(.97)}
+.row .fseg{display:inline-flex;margin-left:8px;vertical-align:middle}
+.row .nm .tag.used{margin-left:6px}
+@media (max-width:640px){.row .fbtn{width:22px;height:22px}.row .fseg{gap:8px;margin:6px 0 2px;display:flex}}
+.dcard{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-left:4px solid transparent;border-radius:var(--r);padding:10px 12px}
+.dcard.flag-green{border-left-color:var(--ok);background:var(--ok-soft)}
+.dcard.flag-yellow{border-left-color:var(--warn);background:var(--warn-soft)}
+.dcard.flag-red{border-left-color:var(--bad);background:var(--bad-soft)}
+.dcard.flag-purple{border-left-color:var(--purple);background:var(--purple-soft)}
+.dcard.used{box-shadow:0 0 0 2px var(--work)}
+.dcard .dhead{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.dcard .desc{white-space:pre-wrap;font-size:14px}
 .grp{background:var(--bg);padding:6px 12px;font-size:12px;font-weight:600;color:var(--muted);border-top:1px solid var(--line);letter-spacing:.03em;text-transform:uppercase}
 @media (max-width:860px){
   .row{grid-template-columns:28px minmax(0,1fr) auto;grid-template-areas:"c n s" "c m s"}
@@ -515,12 +534,16 @@ function filtered(){
     return true;
   }).sort((a,b)=>a.route===b.route?a.n-b.n:(a.route==="central"?-1:1));
 }
+function flagSeg(inv){
+  const fl=(flags[inv]||{}).status;
+  return `<span class="fseg" title="Позначка (як у «Картках ОС»)">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>`;
+}
 function rowHtml(it){
-  const need=needsData(it);
-  return `<div class="row" data-inv="${esc(it.inv)}">
+  const need=needsData(it), fl=(flags[it.inv]||{}).status, used=!!usage[it.inv];
+  return `<div class="row${fl?" flag-"+fl:""}${used?" used":""}" data-inv="${esc(it.inv)}">
     <span class="c-chk"><input type="checkbox" data-sel="${esc(it.inv)}" ${sel.has(it.inv)?"checked":""} aria-label="Выбрать ${esc(it.inv)}"></span>
     <span class="c-inv num">${esc(it.inv)}</span>
-    <span class="nm"><div>${esc(it.name)}${need?'<span class="need" title="Нужны данные"></span>':""}${it.noWaste?' <span class="tag">без відходів</span>':""}${it.owner?` <span class="tag own">${esc(it.owner)}</span>`:""}</div><small>введено ${esc(it.date)}${it.zal>0?" · залишок "+money(it.zal):""}</small></span>
+    <span class="nm"><div>${esc(it.name)}${need?'<span class="need" title="Нужны данные"></span>':""}${it.noWaste?' <span class="tag">без відходів</span>':""}${it.owner?` <span class="tag own">${esc(it.owner)}</span>`:""}${usedTags(it.inv)}${flagSeg(it.inv)}</div><small>введено ${esc(it.date)}${it.zal>0?" · залишок "+money(it.zal):""}</small></span>
     <span class="c-rah num">${esc(it.rah)}</span>
     <span class="c-perv num r">${money(it.perv)}</span>
     <span class="c-zal num r">${money(it.zal)}</span>
@@ -530,7 +553,7 @@ function rowHtml(it){
   </div>`;
 }
 function renderList(){
-  const L=$("#list"), rows=filtered();
+  const L=$("#list"), rows=filtered(); computeUsage();
   if(!Object.keys(items).length){L.innerHTML=`<div class="empty">${conn==="off"?"База недоступна в этом окне. Откройте приложение в claude.ai под своей учётной записью.":"Позиции ещё не загружены. Как только я заполню базу, здесь появятся все 51 позиция."}</div>`;return}
   if(!rows.length){L.innerHTML='<div class="empty">Под фильтр ничего не попало.</div>';return}
   const head=`<div class="row head"><span></span><span>Інв. №</span><span>Найменування</span><span>Рах.</span><span class="r">Первісна</span><span class="r">Залишок</span><span>Маршрут</span><span>Статус</span></div>`;
@@ -544,6 +567,21 @@ function renderList(){
 }
 
 /* ---------- drawer ---------- */
+/* блок «Картка ОС» у картці позиції: позначка, фото, опис і двигун з довідника карток (photoFlags/cardPhotos); редагування — у самій картці */
+function itemCardHtml(it){
+  const inv=it.inv, e=catalog[inv];
+  if(!e)return `<h2>Картка ОС</h2><div class="sub">${Object.keys(catalog).length?"Цього інв. номера немає в довіднику «Картки ОС».":"Довідник «Картки ОС» не завантажено."}</div>`;
+  const meta=flags[inv]||{}, fl=meta.status, list=cardPhotoList(inv,e), m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
+  return `<h2>Картка ОС</h2>
+    <div class="dcard${fl?" flag-"+fl:""}${used?" used":""}">
+      <div class="dhead">${flagSeg(inv)}<span class="ptags">${usedTags(inv)}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span></span></div>
+      ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
+      ${meta.desc?`<div class="desc">${esc(meta.desc)}</div>`:""}
+      ${m.pump?`<div class="sub">${m.hasMotor?"Насос з електродвигуном.":m.no?`Без двигуна, знятий двигун № <b class="num">${esc(m.no)}</b>.`:"Без двигуна, номер двигуна не вказано."}</div>${cmp?compatHtml(inv):""}`:""}
+      ${used?usage[inv].map(p=>`<div class="compat ${(motorCompat(p)||{}).level||"info"}"><b>Встановлено на насос інв. № ${esc(p)}</b> · ${esc((catalog[p]||{}).name||"")}</div>`).join(""):""}
+      <div><button class="btn sm" data-gotocard="${esc(inv)}">Відкрити картку ОС (фото, опис, двигун)</button></div>
+    </div>`;
+}
 function openDrawer(inv){openInv=inv;$("#scrim").hidden=false;$("#drawer").hidden=false;renderDrawer(true)}
 function closeDrawer(){openInv=null;$("#scrim").hidden=true;$("#drawer").hidden=true}
 function renderDrawer(full){
@@ -554,6 +592,7 @@ function renderDrawer(full){
     const r=D.querySelector("#d-req"); if(r&&!r.contains(document.activeElement))r.innerHTML=reqListHtml(Object.values(reqs).filter(x=>x.inv===it.inv));
     const d=D.querySelector("#d-docs"); if(d)d.innerHTML=itemDocsHtml(it);
     const m=D.querySelector("#d-miss"); if(m)m.innerHTML=missHtml(it);
+    const pc=D.querySelector("#d-card"); if(pc)pc.innerHTML=itemCardHtml(it);
     return;
   }
   const cols=(it.colored&&it.colored.length?it.colored:[]);
@@ -580,6 +619,7 @@ function renderDrawer(full){
         <div><small>Амортизація за місяць</small><b class="num">${money(it.am)}</b></div>
       </div>
     </div>
+    <div class="sec" id="d-card">${itemCardHtml(it)}</div>
     <div class="sec"><h2>Данные для акта</h2>
       ${respSelect(it)}
       <div class="nw-box">
@@ -820,6 +860,7 @@ function usedTags(no){
   return (usage[no]||[]).map(p=>{const c=motorCompat(p);return `<button type="button" class="tag used${c&&c.level==="bad"?" bad":""}" data-gotocard="${esc(p)}" title="Відкрити картку насоса">🔗 на насосі ${esc(p)}${c&&c.level==="bad"?" · несумісний":""}</button>`}).join("");
 }
 function gotoCard(inv){
+  if(openInv)closeDrawer();
   showTab("photos"); fFlag=""; fPhoto=inv; $("#p-q").value=inv; renderPhotoList();
   const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(d){pendingOpen=inv;d.open=true}
 }
@@ -941,6 +982,7 @@ function setFlag(inv,color){
   const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`);
   if(d){d.className="pcard"+(color?" flag-"+color:"");d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color))}
   renderPhotoFilters();
+  if(items[inv]){renderList();if(openInv===inv)renderDrawer(false)}
   savePhotoMeta(inv,{status:color||null});
 }
 const pmq={};
@@ -1211,7 +1253,7 @@ let ct; function saveCommon(){clearTimeout(ct);ct=setTimeout(async()=>{try{await
 renderStats();renderFilters();renderPhotoList();renderMshpList();
 (async()=>{
   try{const r=await fetch("../data/photos.json");catalog=await r.json()}catch(e){catalog={}}
-  renderPhotoList();
+  renderPhotoList();renderList();if(openInv)renderDrawer(false);
 })();
 (async()=>{
   try{const r=await fetch("../data/mshp.json");mshp=await r.json()}catch(e){mshp={}}
@@ -1229,9 +1271,9 @@ renderStats();renderFilters();renderPhotoList();renderMshpList();
   db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;render()},onErr);
   db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
-  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList();renderMshpList()},onErr);
+  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList();renderMshpList();renderList();if(openInv)renderDrawer(false)},onErr);
   db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});mflags=n;renderMshpList()},onErr);
-  db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;renderPhotoList()},onErr);
+  db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;renderPhotoList();if(openInv)renderDrawer(false)},onErr);
 })();
 })();
 </script>
