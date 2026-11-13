@@ -31,10 +31,13 @@
   const load = async () => {
     if (store) return store;
     try { const raw = localStorage.getItem(KEY); if (raw) store = JSON.parse(raw); } catch (e) {}
-    if (!store) {
-      try { const r = await fetch("../data/export.json"); store = await r.json(); }
-      catch (e) { console.warn("[mirror-shim] не вдалося прочитати data/export.json — стартую з порожньої бази", e); store = {}; }
-    }
+    /* свіжий знімок (інший exportedAt) замінює локальну копію — інакше браузер назавжди
+       лишався б на першому завантаженому export.json і не бачив оновлень журналу */
+    let snap = null;
+    try { const r = await fetch("../data/export.json", { cache: "no-cache" }); snap = await r.json(); }
+    catch (e) { console.warn("[mirror-shim] не вдалося прочитати data/export.json", e); }
+    if (snap && (!store || store.exportedAt !== snap.exportedAt)) store = snap;
+    if (!store) store = {};
     for (const c of ["items", "requests", "files", "settings"]) store[c] = store[c] || {};
     persist();
     return store;
