@@ -331,6 +331,7 @@ button.pill{border:0;font:inherit}
       <b id="bulk-n"></b>
       <button class="btn sm pri" data-bulk="work">Взять в работу</button>
       <button class="btn sm pri" id="gen-bulk">Сформировать акты</button>
+      <button class="btn sm pri" id="gen-group" title="Один акт техстану і один акт 818 на всі вибрані однотипні позиції">Акт группы</button>
       <button class="btn sm" data-bulk="done">Отметить списанными</button>
       <button class="btn sm" data-bulk="new">Убрать из работы</button>
       <button class="btn sm" data-bulk="clear">Снять выделение</button>
@@ -398,40 +399,85 @@ const GEN=(function(){
     const L=[];
     if(it.noWaste){L.push({t:"Цінності від ліквідації відсутні"});return{L,qT:"",sT:"0 грн"}}
     for(const x of c.col)L.push({t:x.type,q:kgs(x.kg),p:x.price+" грн/т",s:grn(x.kg/1000*x.price)});
-    if(c.net>0)L.push({t:c.mainType==="Металобрухт, вид 500"?"Чорний металобрухт вид 500":c.mainType,q:kgs(c.net),p:c.mainPrice+" грн/т",s:grn(c.sumBlack)});
+    for(const m of c.mains||[{type:c.mainType,net:c.net,price:c.mainPrice,sum:c.sumBlack}])
+      if(m.net>0)L.push({t:m.type==="Металобрухт, вид 500"?"Чорний металобрухт вид 500":m.type,q:kgs(m.net),p:m.price+" грн/т",s:grn(m.sum)});
     if(c.corr)L.push({t:"корозія "+String(c.pct).replace(".",",")+"%",q:kgs(c.corr)});
     if(!L.length)L.push({t:"Цінності від ліквідації відсутні"});
     if(c.N)L.push({t:it.nonmetalType||"Неметалеві частини",q:kgs(c.N)});
     L[0].d="Приходний ордер №";
     return{L,qT:kgs(c.M),sT:grn(c.total)};
   }
-  async function make(it,common,actNo,calc){
-    const c=calc(it), pct=it.perv?Math.round(it.zn/it.perv*10000)/100:100;
+  /* зведений розрахунок брухту для акта групи: маси й кольорові метали складаються по типах,
+     основний метал — окремим рядком на кожен вид (ємності з нержавійки + чорний метал тощо) */
+  function groupCalc(list,calc){
+    const col={},main={}; let M=0,N=0,black=0,corr=0;
+    for(const c of list.filter(x=>!x.noWaste).map(calc)){
+      M+=c.M;N+=c.N;black+=c.black;corr+=c.corr;
+      for(const x of c.col)(col[x.type]=col[x.type]||{type:x.type,kg:0,price:x.price}).kg+=x.kg;
+      if(c.net>0)(main[c.mainType]=main[c.mainType]||{type:c.mainType,net:0,price:c.mainPrice}).net+=c.net;
+    }
+    const mains=Object.values(main).map(m=>({...m,net:Math.round(m.net*10)/10,sum:Math.round(m.net*10)/10/1000*m.price}));
+    const cols=Object.values(col);
+    const total=mains.reduce((s,m)=>s+m.sum,0)+cols.reduce((s,x)=>s+x.kg/1000*x.price,0);
+    return{M,N,col:cols,corr:Math.round(corr*10)/10,pct:black?Math.round(corr/black*10000)/100:0,mains,total};
+  }
+  async function make(it,common,actNo,calc){return build(it,common,actNo,calc(it),null)}
+  /* акт групи однотипних ОЗ: один акт техстану і один акт 818 на кілька інв. номерів */
+  async function makeGroup(list,common,actNo,calc){
+    const uniq=a=>[...new Set(a.map(x=>String(x??"").trim()).filter(Boolean))];
+    const sum=k=>list.reduce((s,x)=>s+Number(x[k]||0),0);
+    const it={name:uniq(list.map(x=>x.name)).join(", "),inv:list.map(x=>x.inv).join(", "),date:uniq(list.map(x=>x.date)).join(", "),
+      pasp:uniq(list.map(x=>x.pasp)).join(", "),perv:sum("perv"),zn:sum("zn"),zal:sum("zal"),
+      mass:list.every(x=>x.noWaste||num0(x.mass))&&list.some(x=>num0(x.mass))?sum("mass"):null,noWaste:list.every(x=>x.noWaste),
+      nonmetalType:uniq(list.map(x=>x.nonmetalType)).join(", "),character:uniq(list.map(x=>x.character)).join(" "),defects:uniq(list.map(x=>x.defects)).join(" ")};
+    return build(it,common,actNo,groupCalc(list,calc),list);
+  }
+  async function build(it,common,actNo,c,group){
+    const pct=it.perv?Math.round(it.zn/it.perv*10000)/100:100, n=group?group.length:1;
     const name=String(it.name||"").trim(), store=common.store||"склад";
-    const concl=`об'єкт «${name}» не відповідає вимогам паспортних характеристик, за довготривалий час експлуатації виробив свій фізичний ресурс, не придатний до подальшої експлуатації, не може бути використаний за призначенням та підлягає списанню`+(it.noWaste?".":` з подальшим оприбуткуванням на ${store} як металобрухт після списання.`);
+    const concl=(group
+      ?`об'єкти «${name}» у кількості ${n} од. не відповідають вимогам паспортних характеристик, за довготривалий час експлуатації виробили свій фізичний ресурс, не придатні до подальшої експлуатації, не можуть бути використані за призначенням та підлягають списанню`
+      :`об'єкт «${name}» не відповідає вимогам паспортних характеристик, за довготривалий час експлуатації виробив свій фізичний ресурс, не придатний до подальшої експлуатації, не може бути використаний за призначенням та підлягає списанню`)
+      +(it.noWaste?".":` з подальшим оприбуткуванням на ${store} як металобрухт після списання.`);
     const defects=it.defects||"";
     // --- акт технічного стану (docx)
     const zt=await JSZip.loadAsync(b64(TPL_TECH));
-    const dx=await zt.file("word/document.xml").async("string");
-    zt.file("word/document.xml",fill(dx,{present:common.present||common.mol||"",obj:`«${name}»`,inv:it.inv,date:it.date,
+    let dx=await zt.file("word/document.xml").async("string");
+    if(group)dx=dx.replace("(інвентарний № {{inv}})","(інвентарні №№ {{inv}})");
+    zt.file("word/document.xml",fill(dx,{present:common.present||common.mol||"",obj:group?`«${name}» у кількості ${n} од.`:`«${name}»`,inv:it.inv,date:it.date,
       perv:n2(it.perv).replace(".",","),zal:n2(it.zal).replace(".",","),pct:String(pct).replace(".",","),defects,conclusion:concl}));
     const tech=await zt.generateAsync({type:"uint8array",compression:"DEFLATE"});
     // --- акт списання ОЗ, форма 818 (xlsx)
     const za=await JSZip.loadAsync(b64(TPL_818));
     const {L,qT,sT}=lines(it,c);
-    const m={org:common.org||"",actNo,actDate:common.actDate||"",name,pasp:it.pasp||" ",inv:it.inv,date:it.date,perv:n2(it.perv),zn:n2(it.zn),liq:"0",
+    const m={org:common.org||"",actNo,actDate:common.actDate||"",name:group?`${name} — ${n} од.`:name,pasp:it.pasp||" ",inv:it.inv,date:it.date,perv:n2(it.perv),zn:n2(it.zn),liq:"0",
       order:common.order||"",location:common.location||"",mol:common.mol||"",character:it.character||"",
       mass:num0(it.mass)?kgs(it.mass):"—",precious:"немає",defects,attach:common.attach||"",signDate:"«____» ______________ 2026 р.",qT,sT};
     for(let k=1;k<=8;k++){const x=L[k-1]||{};m["d"+k]=x.d||"";m["t"+k]=x.t||"";m["q"+k]=x.q||"";m["p"+k]=x.p||"";m["s"+k]=x.s||""}
     let sh=fill(await za.file("xl/worksheets/sheet1.xml").async("string"),m);
+    if(group&&(m.name.length>45||m.inv.length>28)){
+      // перелік номерів не влазить в один рядок: рядок 24 — удвічі вищий з переносом, рядок 37 (поле пошкоджень) — на стільки ж нижчий, щоб лишились рівно 2 сторінки
+      let st=await za.file("xl/styles.xml").async("string");
+      const s0=(sh.match(/<c r="I24" s="(\d+)"/)||[])[1];
+      const xfs=st.match(/<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/);
+      const xf=s0!=null&&xfs&&xfs[2].match(/<xf [^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)[+s0];
+      if(xf){
+        const nx=xf.replace(/<alignment[^>]*\/>/,"").replace(/\/>$|<\/xf>$/,m=>(m==="/>"?">":"")+'<alignment vertical="center" wrapText="1"/></xf>').replace(/ applyAlignment="[^"]*"/,"").replace(/^<xf /,'<xf applyAlignment="1" ');
+        st=st.replace(xfs[0],`<cellXfs count="${+xfs[1]+1}">${xfs[2]}${nx}</cellXfs>`);
+        za.file("xl/styles.xml",st);
+        sh=sh.replace(/<c r="(A24|I24)" s="\d+"/g,`<c r="$1" s="${xfs[1]}"`);
+      }
+      sh=sh.replace(/<row r="24" ht="[^"]*"/,'<row r="24" ht="24"').replace(/<row r="37" ht="([^"]*)"/,(_,h)=>`<row r="37" ht="${Math.max(12,+h-12)}"`);
+    }
     for(let k=Math.max(L.length,1)+1;k<=8;k++){const r=69+k;sh=sh.replace(new RegExp(`<row r="${r}"([^>]*?)(/?)>`),(_,a,sl)=>`<row r="${r}"${a.replace(/ hidden="[^"]*"/,"")} hidden="1"${sl}>`)}
     za.file("xl/worksheets/sheet1.xml",sh);
     const act=await za.generateAsync({type:"uint8array",compression:"DEFLATE"});
-    return[{kind:"tech",title:`Акт технічного стану — ${name}`,filename:`${it.inv} Акт технічного стану.docx`,bytes:tech},
-           {kind:"818",title:`Акт списання ОЗ — ${name}`,filename:`${it.inv} Акт списання ОЗ.xlsx`,bytes:act}];
+    const fn=group?`${group[0].inv}-${group[n-1].inv} (група ${n} од.)`:it.inv, tt=group?`${name} (група ${n} од.)`:name;
+    return[{kind:"tech",title:`Акт технічного стану — ${tt}`,filename:`${fn} Акт технічного стану.docx`,bytes:tech},
+           {kind:"818",title:`Акт списання ОЗ — ${tt}`,filename:`${fn} Акт списання ОЗ.xlsx`,bytes:act}];
   }
   function num0(v){const n=Number(v);return v!==null&&v!==""&&isFinite(n)&&n>0}
-  return{make};
+  return{make,makeGroup};
 })();
 </script>
 <script type="text/plain" id="app-src">
@@ -701,6 +747,14 @@ async function genFor(inv,actNo){
   const it=items[inv], p=respOf(it); const files=await GEN.make(it,{...common,mol:p?p.gen:"",present:p?p.nom:""},actNo,calc); const now=new Date().toISOString();
   for(const f of files){await db.doc(`files/${inv}-${f.kind}`).set({title:f.title,filename:f.filename,kind:f.kind,invs:[inv],b64:u8b64(f.bytes),created:now})}
   const patch={status:it.status==="done"?"done":"ready",generatedAt:now}; items[inv]={...it,...patch}; await saveNow(`items/${inv}`,patch);
+  return files;
+}
+/* акт групи однотипних ОЗ: файли files/grp-{перший інв}-{kind} з invs усіх позицій, у кожної позиції — groupId */
+async function genGroup(invs,actNo){
+  const list=invs.map(i=>items[i]).sort((a,b)=>a.n-b.n), p=respOf(list[0]);
+  const files=await GEN.makeGroup(list,{...common,mol:p?p.gen:"",present:p?p.nom:""},actNo,calc); const now=new Date().toISOString(), gid="grp-"+list[0].inv;
+  for(const f of files){await db.doc(`files/${gid}-${f.kind}`).set({title:f.title,filename:f.filename,kind:f.kind,invs:list.map(x=>x.inv),b64:u8b64(f.bytes),created:now})}
+  for(const it of list){const patch={status:it.status==="done"?"done":"ready",generatedAt:now,groupId:gid}; items[it.inv]={...it,...patch}; await saveNow(`items/${it.inv}`,patch)}
   return files;
 }
 function missHtml(it){const m=missing(it);return (it.status==="work"&&m.length)?`<div class="note info">Чтобы я подготовил акты, заполните: ${m.join(", ")}.</div>`:""}
@@ -1188,6 +1242,16 @@ document.addEventListener("click",async e=>{
     try{await genFor(openInv,no); msg.innerHTML=`<div class="note info">Акты сформированы. Скачайте их ниже, в блоке «Документы».</div>`; toast("Акты готовы")}
     catch(e){msg.innerHTML='<div class="note bad">Не удалось сформировать акты. Повторите ещё раз.</div>'}
     finally{bt.disabled=false;bt.textContent="Сформувати заново"; renderStats(); renderList(); renderDrawer(false)}
+    return}
+  if(t.closest("#gen-group")){const bt=t.closest("#gen-group");const list=[...sel];
+    if(list.length<2){toast("Выберите хотя бы две однотипные позиции");return}
+    const b=commonIssues(); if(b.length){toast("Заполните во вкладке «Общие данные»: "+b.join(", "));return}
+    const bad=list.filter(i=>genIssues(items[i]).length); if(bad.length){toast("Не заполнены масса или повреждения: "+bad.join(", "));return}
+    if(!db||typeof JSZip==="undefined"){toast("Не загрузился модуль формирования, обновите страницу");return}
+    bt.disabled=true; bt.textContent="Формирую…";
+    try{await genGroup(list,""); sel.clear(); toast(`Акт группы готов: ${list.length} поз. — во вкладке «Документы»`)}
+    catch(e){toast("Не удалось сформировать акт группы")}
+    finally{bt.disabled=false; bt.textContent="Акт группы"; render()}
     return}
   if(t.closest("#gen-bulk")){const bt=t.closest("#gen-bulk");const list=[...sel].sort((a,b)=>items[a].n-items[b].n);
     const b=commonIssues(); if(b.length){toast("Заполните во вкладке «Общие данные»: "+b.join(", "));return}
