@@ -853,8 +853,11 @@ function motorCandidates(){
   for(const [nom,it] of Object.entries(mshp))if(/двигун/i.test(it.name||""))out.push([nom,it.name]);
   return out.sort((a,b)=>a[1].localeCompare(b[1]));
 }
+/* переписуємо <datalist> лише коли список реально змінився — інакше відкрите випадне меню закривається */
+let motorCandHtml="";
 function renderMotorCandidates(){
-  $("#motor-candidates").innerHTML=motorCandidates().map(([no,name])=>`<option value="${esc(no)}">${esc(name)}${usage[no]?` — вже на насосі ${esc(usage[no].join(", "))}`:""}</option>`).join("");
+  const html=motorCandidates().map(([no,name])=>`<option value="${esc(no)}">${esc(name)}${usage[no]?` — вже на насосі ${esc(usage[no].join(", "))}`:""}</option>`).join("");
+  if(html!==motorCandHtml){motorCandHtml=html;$("#motor-candidates").innerHTML=html}
 }
 /* стан «електродвигун» для насоса: є/немає, номер знятого двигуна, дублікат номера, чи бракує номера */
 function motorState(inv,e){
@@ -1024,8 +1027,14 @@ async function addToWriteoff(inv){
   try{ await db.doc(`items/${inv}`).set(doc); toast("Додано до списання") }
   catch(err){ toast("Не вдалося зберегти, спробуйте ще раз") }
 }
+/* поки користувач друкує в полі картки (опис, № двигуна), повний перерендер відкладається до виходу з поля:
+   інакше snapshot власного ж запису підміняє поле новим і закриває випадний список підказок двигунів */
+let photoRenderPending=false;
 function renderPhotoList(){
   const L=$("#photo-list"), entries=Object.entries(catalog);
+  const ae=document.activeElement;
+  if(ae&&L.contains(ae)&&ae.matches("input:not([type=checkbox]):not([type=file]),textarea")){photoRenderPending=true;return}
+  photoRenderPending=false;
   $("#cnt-photos").textContent=entries.length;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
   if(!entries.length){$("#f-pflag").innerHTML=$("#f-pkind").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
@@ -1299,6 +1308,9 @@ document.addEventListener("input",e=>{
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"||k==="desc"){refreshMotorUi(inv);renderPhotoFilters()}return}
+});
+document.addEventListener("focusout",e=>{
+  if(photoRenderPending&&e.target.closest&&e.target.closest("#photo-list"))setTimeout(()=>{if(photoRenderPending)renderPhotoList()},0);
 });
 document.addEventListener("change",e=>{
   const t=e.target;
