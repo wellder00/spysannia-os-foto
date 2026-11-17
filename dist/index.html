@@ -272,8 +272,8 @@ button.pill{border:0;font:inherit}
   h1{font-size:18px}
   .tabs{margin-bottom:10px}
   /* вкладки й чипи — один рядок з горизонтальним скролом до краю екрана (видно, що ряд прокручується), щоб липка панель не займала третину екрана */
-  .tabs,#f-pflag,#f-mflag,#f-status,#f-req{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px;scroll-padding-inline:16px}
-  .tabs::-webkit-scrollbar,#f-pflag::-webkit-scrollbar,#f-mflag::-webkit-scrollbar,#f-status::-webkit-scrollbar,#f-req::-webkit-scrollbar{display:none}
+  .tabs,#f-pflag,#f-mflag,#f-pkind,#f-mkind,#f-status,#f-req{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding-inline:16px;scroll-padding-inline:16px}
+  .tabs::-webkit-scrollbar,#f-pflag::-webkit-scrollbar,#f-mflag::-webkit-scrollbar,#f-pkind::-webkit-scrollbar,#f-mkind::-webkit-scrollbar,#f-status::-webkit-scrollbar,#f-req::-webkit-scrollbar{display:none}
   .chip{flex:none;padding:7px 12px}
   .hide-sm{display:none}
   #f-route,#f-owner{flex:1 1 0;min-width:0}
@@ -361,6 +361,7 @@ button.pill{border:0;font:inherit}
   <section id="v-photos">
     <div class="ptool">
       <div class="bar"><input id="p-q" class="search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Поиск по инв. номеру или названию"></div>
+      <div class="bar" id="f-pkind"></div>
       <div class="bar" id="f-pflag"></div>
     </div>
     <div class="stack" id="photo-list"><div class="empty">Загружаю справочник…</div></div>
@@ -370,6 +371,7 @@ button.pill{border:0;font:inherit}
     <p class="sub" style="margin:0 0 12px">Інвентаризаційний опис МШП (малоцінних швидкозношуваних предметів) в експлуатації, дільниця (МВО) 2402. Довідковий список — без фото і без генерації актів.</p>
     <div class="ptool">
       <div class="bar"><input id="m-q" class="search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Поиск по названию или номенклатурному №"></div>
+      <div class="bar" id="f-mkind"></div>
       <div class="bar" id="f-mflag"></div>
     </div>
     <div class="list" id="mshp-list"><div class="empty">Загружаю список…</div></div>
@@ -506,7 +508,7 @@ function itemDocsHtml(it){const list=itemDocs(it.inv);if(!list.length)return doc
     <div class="note warn"><b>Файли до листа самі не додаються.</b> Перед «Надіслати» в Gmail натисніть скріпку внизу листа і виберіть два скачані файли з папки «Завантаження» (${list.map(([,d])=>esc(d.filename)).join(", ")}). Або просто перетягніть їх у вікно листа.</div></div>`}
 
 let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, mshp={}, mflags={}, extraPhotos={}, conn="wait";
-let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", fMshp="", fMflag="", sel=new Set(), openInv=null, lb=null;
+let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", fMshp="", fMflag="", fPkind="", fMkind="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>(v==null||v==="")?"—":Number(v).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -826,7 +828,17 @@ async function download(id){
 
 /* ---------- photo catalog ---------- */
 function photoUrl(p){return "../"+p.split("/").map(encodeURIComponent).join("/")}
-function isPump(name){return /насос/i.test(name||"")}
+/* «насосна» (будівля/приміщення) — не насос; «НАСОСН.» (скорочення насосного агрегата) — насос */
+function isPump(name){return /насос(?!н(?:ою|ої|а)(?![а-яіїєґ]))/i.test(name||"")}
+/* окремий електродвигун: назва починається з «ЕЛ.ДВИГУН», «ЕЛ/ДВИГУН», «ЕЛЕКТРОДВИГУН» (а не «… з ел.двигуном») */
+function isMotor(name){return /^\s*(?:ел[.\/\s]*|електро)?двигун/i.test(name||"")}
+function kindOf(name){return isPump(name)?"pump":isMotor(name)?"motor":"other"}
+/* чипи «Тип»: усі · насоси · двигуни · інше (працюють разом з фільтром за позначкою) */
+const KINDS=[["","Все типы"],["pump","Насосы"],["motor","Двигатели"],["other","Прочее"]];
+function kindChips(names,cur,attr){
+  const n={"":0,pump:0,motor:0,other:0}; for(const nm of names){n[""]++;n[kindOf(nm)]++}
+  return KINDS.map(([k,l])=>`<button class="chip" data-${attr}="${k}" aria-pressed="${cur===k}">${l}<span class="cnt">${n[k]}</span></button>`).join("");
+}
 function defaultHasMotor(name){return !/без\s*ел/i.test(name||"")}
 function motorDupInv(inv,no){
   const v=String(no||"").trim(); if(!v)return null;
@@ -915,7 +927,7 @@ function usedTags(no){
 }
 function gotoCard(inv){
   if(openInv)closeDrawer();
-  showTab("photos"); fFlag=""; fPhoto=inv; $("#p-q").value=inv; renderPhotoList();
+  showTab("photos"); fFlag=""; fPkind=""; fPhoto=inv; $("#p-q").value=inv; renderPhotoList();
   const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`); if(d){pendingOpen=inv;d.open=true}
 }
 const FLAGS=[["green","ok","Есть"],["yellow","warn","Проверить"],["red","bad","Нет"],["purple","purple","На списание"]];
@@ -979,6 +991,7 @@ function pcardHtml(inv,e){
 /* фільтр за позначкою: "" усі · green/yellow/red/purple · none без позначки · nomotor насоси без двигуна і номера · nophoto без фото */
 function cardMatches(inv,e,s){
   if(s&&!(inv.includes(s)||String(e.name||"").toLowerCase().includes(s)))return false;
+  if(fPkind&&kindOf(e.name)!==fPkind)return false;
   if(!fFlag)return true;
   const st=(flags[inv]||{}).status;
   if(fFlag==="none")return !st;
@@ -992,6 +1005,7 @@ function renderPhotoFilters(){
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
   const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
+  $("#f-pkind").innerHTML=kindChips(Object.values(catalog).map(e=>e.name),fPkind,"pkind");
 }
 /* додає позицію з довідника «Картки ОС» у журнал списання (items) — route визначається з рах. обліку (103 — нерухомість/Міненерго, інакше — центральна комісія) */
 async function addToWriteoff(inv){
@@ -1014,7 +1028,7 @@ function renderPhotoList(){
   const L=$("#photo-list"), entries=Object.entries(catalog);
   $("#cnt-photos").textContent=entries.length;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
-  if(!entries.length){$("#f-pflag").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
+  if(!entries.length){$("#f-pflag").innerHTML=$("#f-pkind").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
   computeUsage();renderPhotoFilters();renderMotorCandidates();
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
@@ -1115,6 +1129,7 @@ function renderMflagFilters(){
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
   const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""]];
   $("#f-mflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-mflag="${k}" aria-pressed="${fMflag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
+  $("#f-mkind").innerHTML=kindChips(Object.values(mshp).map(it=>it.name),fMkind,"mkind");
 }
 function mshpRowHtml(nom,it){
   const fl=(mflags[nom]||{}).status, used=!!usage[nom];
@@ -1131,11 +1146,12 @@ function mshpRowHtml(nom,it){
 function renderMshpList(){
   const L=$("#mshp-list"), entries=Object.entries(mshp);
   $("#cnt-mshp").textContent=entries.length;
-  if(!entries.length){$("#f-mflag").innerHTML="";L.innerHTML='<div class="empty">Довідник МШП не завантажено. Виконайте <code>python build_mshp.py</code>.</div>';return}
+  if(!entries.length){$("#f-mflag").innerHTML=$("#f-mkind").innerHTML="";L.innerHTML='<div class="empty">Довідник МШП не завантажено. Виконайте <code>python build_mshp.py</code>.</div>';return}
   computeUsage();renderMflagFilters();
   const s=fMshp.trim().toLowerCase();
   const rows=entries.filter(([nom,it])=>{
     if(s&&!(nom.includes(s)||String(it.name||"").toLowerCase().includes(s)))return false;
+    if(fMkind&&kindOf(it.name)!==fMkind)return false;
     if(!fMflag)return true;
     const st=(mflags[nom]||{}).status;
     return fMflag==="none"?!st:st===fMflag;
@@ -1196,6 +1212,8 @@ document.addEventListener("click",async e=>{
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,(mflags[nom]||{}).status===c?null:c);return}
   const mf=t.closest("[data-mflag]"); if(mf){fMflag=mf.dataset.mflag;renderMshpList();return}
+  const mk=t.closest("[data-mkind]"); if(mk){fMkind=mk.dataset.mkind;renderMshpList();return}
+  const pk=t.closest("[data-pkind]"); if(pk){fPkind=pk.dataset.pkind;renderPhotoList();return}
   const dp=t.closest("[data-delphoto]"); if(dp){e.preventDefault();askDelPhoto(dp,dp.dataset.delinv,dp.dataset.delkind,dp.dataset.delphoto);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
   if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
