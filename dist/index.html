@@ -380,7 +380,7 @@ button.pill{border:0;font:inherit}
   </section>
 
   <section id="v-mshp" hidden>
-    <p class="sub" style="margin:0 0 12px">Інвентаризаційний опис МШП (малоцінних швидкозношуваних предметів) в експлуатації, дільниця (МВО) 2402. Довідковий список без генерації актів; електродвигуни — кожна штука окремим рядком, з фото й описом.</p>
+    <p class="sub" style="margin:0 0 12px">Інвентаризаційний опис МШП (малоцінних швидкозношуваних предметів) в експлуатації, дільниця (МВО) 2402. Довідковий список без генерації актів; до кожної позиції можна додати фото й опис, електродвигуни — кожна штука окремим рядком.</p>
     <div class="ptool">
       <div class="bar"><input id="m-q" class="search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Поиск по названию или номенклатурному №"></div>
       <div class="bar" id="f-mkind"></div>
@@ -946,13 +946,13 @@ function motorCompat(pumpInv){
     else if(d.kw>p.kw*1.6){up("warn");lines.push(`Двигун значно потужніший: ${d.kw} кВт для ${p.kw} кВт — зайва витрата енергії.`)}
     else lines.push(`Потужність: ${d.kw} кВт для ${p.kw} кВт ✓`);
   } else {up("info");lines.push(`Немає даних про потужність ${!p.kw?"насоса":"двигуна"}.`)}
-  return {level,motor:mi,lines,needPump:(!p.kw||!p.rpm)&&srcOf(pumpInv)==="os"};
+  return {level,motor:mi,lines,needPump:!p.kw||!p.rpm};
 }
 function compatHtml(inv){
   const c=motorCompat(inv); if(!c)return "";
   return `<div class="compat ${c.level}"><b>${CMP_TITLE[c.level]}</b>${c.motor?` · ${esc(c.motor.src)}: ${esc(c.motor.name)}`:""}
     <ul>${c.lines.map(l=>`<li>${esc(l)}</li>`).join("")}</ul>
-    ${c.needPump?'<small class="sub">Допишіть в «Опис позиції» насоса потужність і оберти, напр. «30 кВт, 2900 об/хв».</small>':""}</div>`;
+    ${c.needPump?'<small class="sub">Допишіть в опис насоса потужність і оберти, напр. «30 кВт, 2900 об/хв».</small>':""}</div>`;
 }
 /* номер двигуна → інв. номери насосів, на яких він вказаний (насос без власного двигуна) */
 let usage={};
@@ -1184,9 +1184,9 @@ function renderMflagFilters(){
 const mOpen=new Set();
 function mshpRowHtml(u){
   const {id:nom,it}=u, meta=mflags[nom]||{}, fl=mshpStatus(nom), used=!!usage[nom], m=motorState(nom,it), cmp=motorCompat(nom);
-  const motor=isMotor(it.name), ph=motor?cardPhotoList(nom,{}):[], open=mOpen.has(nom);
+  const motor=isMotor(it.name), ph=cardPhotoList(nom,{}), open=mOpen.has(nom);
   const qty=u.q>1?`1 ${esc(it.unit)} · ${u.k} з ${u.q}`:`${kg(it.qty)} ${esc(it.unit)}`, sum=u.q>1?it.price:it.sum;
-  return `<div class="mrow2 ${fl?"flag-"+fl:""}${used?" used":""}${m.pump||motor?" pump":""}" data-nomrow="${esc(nom)}">
+  return `<div class="mrow2 ${fl?"flag-"+fl:""}${used?" used":""} pump" data-nomrow="${esc(nom)}">
     <span class="fseg m-flags" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-mflagbtn="${c}" data-nom="${esc(nom)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
     <span class="num m-nom">${esc(nom)}</span>
     <span class="m-name">${esc(it.name)}${u.q>1?` <span class="tag">${u.k} з ${u.q}</span>`:""} <span class="mtags">${used?usedTags(nom):""}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}</span></span>
@@ -1194,14 +1194,14 @@ function mshpRowHtml(u){
     <span class="num r m-price">${money(it.price)}</span>
     <span class="num r m-sum">${money(sum)}</span>
     <span class="c-meta"><span class="num">${esc(nom)}</span><span>${qty} × ${money(it.price)}</span><span>${money(sum)} грн</span></span>
-    ${motor?`<div class="m-motor">
+    <div class="m-motor">
       <div><button type="button" class="btn sm" data-mopen="${esc(nom)}" aria-expanded="${open}">${open?"▾":"▸"} Фото й опис${ph.length?` · фото: ${ph.length}`:""}${meta.desc?" · ✎":""}</button></div>
       <div class="m-body" ${open?"":"hidden"}>
         ${ph.length?`<div class="pgrid">${ph.map((p,i)=>`<span class="pthumbwrap"><img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(nom)}" data-pidx="${i}" alt="фото ${esc(nom)}"><button type="button" class="pdel" data-delphoto="${esc(p.key)}" data-delkind="${p.kind}" data-delinv="${esc(nom)}" title="Видалити фото">✕</button></span>`).join("")}</div>`:""}
         <div class="paddrow"><label class="btn sm" for="mf-${esc(nom)}">📷 Додати фото</label><input type="file" accept="image/*" id="mf-${esc(nom)}" data-addphoto="${esc(nom)}" hidden></div>
-        <div class="f full"><label for="md-${esc(nom)}">Опис двигуна</label><textarea id="md-${esc(nom)}" data-mf="desc" data-nom="${esc(nom)}" placeholder="Стан, де стоїть, маркування з шильдика (кВт, об/хв)…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
+        <div class="f full"><label for="md-${esc(nom)}">${motor?"Опис двигуна":"Опис"}</label><textarea id="md-${esc(nom)}" data-mf="desc" data-nom="${esc(nom)}" placeholder="${motor?"Стан, де стоїть, маркування з шильдика (кВт, об/хв)…":m.pump?"Стан, де стоїть, маркування (кВт, об/хв)…":"Стан, де стоїть, примітки…"}" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
       </div>
-    </div>`:""}
+    </div>
     ${m.pump?`<div class="m-motor">
       <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" data-mmotor="${esc(nom)}" ${m.hasMotor?"checked":""}> Є електродвигун</label>
       <div data-motorwrap ${m.hasMotor?"hidden":""}>
@@ -1403,7 +1403,7 @@ document.addEventListener("input",e=>{
   if(t.dataset.cf&&openInv){const i=+t.closest("[data-ci]").dataset.ci;const cols=[...(items[openInv].colored||[])];cols[i]={...cols[i],[t.dataset.cf]:t.dataset.cf==="kg"?num(t.value):t.value};items[openInv]={...items[openInv],colored:cols};$("#calc").innerHTML=calcHtml(items[openInv]);save(`items/${openInv}`,{colored:cols},"Сохранено");return}
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
-  if(t.dataset.mf){const nom=t.dataset.nom;saveMshpMeta(nom,{[t.dataset.mf]:t.value},500);if(t.dataset.mf==="motorNo")refreshMshpMotorUi(nom);return}
+  if(t.dataset.mf){const nom=t.dataset.nom;saveMshpMeta(nom,{[t.dataset.mf]:t.value},500);if(t.dataset.mf==="motorNo"||(t.dataset.mf==="desc"&&mshp[nom]&&isPump(mshp[nom].name)))refreshMshpMotorUi(nom);return}
   if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"||k==="desc"){refreshMotorUi(inv);renderPhotoFilters()}return}
 });
 document.addEventListener("focusout",e=>{
