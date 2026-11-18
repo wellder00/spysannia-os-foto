@@ -237,8 +237,13 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .totop{position:fixed;right:calc(14px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:15;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:20px;box-shadow:0 2px 10px rgba(0,0,0,.18);cursor:pointer}
 .paddrow{display:flex}
 button.pill{border:0;font:inherit}
-.lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;touch-action:pan-y}
-.lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px;touch-action:pinch-zoom}
+.lightbox{position:fixed;inset:0;background:rgba(10,14,12,.88);z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;touch-action:none;overflow:hidden}
+/* жести збільшення обробляє сам лайтбокс (lbZoomAt), тому touch-action:none — без нативного масштабу сторінки */
+.lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px;touch-action:none;transform-origin:center;will-change:transform;cursor:zoom-in;user-select:none;-webkit-user-select:none;-webkit-user-drag:none;position:relative;z-index:0}
+.lightbox.zoomed img{cursor:grab;border-radius:0}
+.lightbox.zoomed .lb-cap,.lightbox.zoomed .lb-nav{opacity:.35}
+.lb-bar{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;position:relative;z-index:1}
+.lightbox .btn,.lb-cap{position:relative;z-index:1}
 .lightbox .btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 .lightbox .btn:hover{background:rgba(255,255,255,.22)}
 .lightbox #lb-close{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px))}
@@ -1162,8 +1167,9 @@ function renderLightbox(){
   box.hidden=false;
   box.innerHTML=`<button class="btn sm" id="lb-close" aria-label="Закрити">Закрити ✕</button>
     ${list.length>1?'<button class="btn lb-nav" id="lb-prev" aria-label="Попереднє фото">‹</button><button class="btn lb-nav" id="lb-next" aria-label="Наступне фото">›</button>':""}
-    <img src="${esc(list[lb.idx].src)}" alt="фото ${esc(lb.inv)}">
-    <div class="lb-cap sub">${esc(lb.inv)}${nm?" · "+esc(nm):""} · ${lb.idx+1}/${list.length}</div>`;
+    <img src="${esc(list[lb.idx].src)}" alt="фото ${esc(lb.inv)}" draggable="false">
+    <div class="lb-bar"><button class="btn" id="lb-zout" aria-label="Зменшити" title="Зменшити">−</button><div class="lb-cap sub">${esc(lb.inv)}${nm?" · "+esc(nm):""} · ${lb.idx+1}/${list.length}</div><button class="btn" id="lb-zin" aria-label="Збільшити" title="Збільшити (або двічі торкніться фото)">+</button></div>`;
+  lz={s:1,x:0,y:0}; lp.clear(); lg=null; box.classList.remove("zoomed");
 }
 
 /* ---------- малоцінка (МШП) — лише довідниковий список, без фото й генерації актів ---------- */
@@ -1313,7 +1319,9 @@ document.addEventListener("click",async e=>{
   const pk=t.closest("[data-pkind]"); if(pk){fPkind=pk.dataset.pkind;renderPhotoList();return}
   const dp=t.closest("[data-delphoto]"); if(dp){e.preventDefault();askDelPhoto(dp,dp.dataset.delinv,dp.dataset.delkind,dp.dataset.delphoto);return}
   const pt=t.closest(".pthumb"); if(pt){openLightbox(pt.dataset.pinv,pt.dataset.pidx);return}
-  if(t.closest("#lb-close")||t===$("#lightbox")){closeLightbox();return}
+  if(t.closest("#lb-close")||(t===$("#lightbox")&&lbDown===t&&!lbMoved)){closeLightbox();return}
+  if(t.closest("#lb-zin")){lbZoomAt(lz.s*1.6,innerWidth/2,innerHeight/2,true);return}
+  if(t.closest("#lb-zout")){lbZoomAt(lz.s/1.6,innerWidth/2,innerHeight/2,true);return}
   if(t.closest("#lb-prev")){lbStep(-1);return}
   if(t.closest("#lb-next")){lbStep(1);return}
   const sb=t.closest("[data-stat]"); if(sb){showTab("items");fStatus=sb.dataset.stat;renderFilters();renderList();return}
@@ -1415,23 +1423,76 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){if(lb){closeLightbox();return} if(openInv)closeDrawer();return}
   if(lb&&e.key==="ArrowLeft"){lbStep(-1);return}
   if(lb&&e.key==="ArrowRight"){lbStep(1);return}
+  if(lb&&(e.key==="+"||e.key==="=")){lbZoomAt(lz.s*1.6,innerWidth/2,innerHeight/2,true);return}
+  if(lb&&e.key==="-"){lbZoomAt(lz.s/1.6,innerWidth/2,innerHeight/2,true);return}
 });
-/* свайп по фото в лайтбоксі: вліво/вправо — перегорнути, вниз — закрити */
-let ts=null;
-$("#lightbox").addEventListener("touchstart",e=>{if(e.touches.length===1){const t=e.touches[0];ts={x:t.clientX,y:t.clientY,drag:false}}else ts=null},{passive:true});
-$("#lightbox").addEventListener("touchmove",e=>{
-  if(!ts||e.touches.length!==1)return;
-  const t=e.touches[0],dx=t.clientX-ts.x,dy=t.clientY-ts.y;
-  if(!ts.drag&&Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy))ts.drag=true;
-  if(ts.drag)e.preventDefault();
-},{passive:false});
-$("#lightbox").addEventListener("touchend",e=>{
-  if(!ts)return;
-  const t=e.changedTouches[0],dx=t.clientX-ts.x,dy=t.clientY-ts.y;
-  ts=null;
-  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)){lbStep(dx<0?1:-1)}
-  else if(dy>80&&Math.abs(dy)>Math.abs(dx)){closeLightbox()}
+/* лайтбокс: збільшення — щипок двома пальцями, подвійний тап/клік, колесо миші, кнопки ±, клавіші +/−;
+   збільшене фото перетягується (не виходить за краї). При масштабі 1 — свайп вліво/вправо перегортає, вниз закриває. */
+const LBZ_MAX=6;
+let lz={s:1,x:0,y:0}, lp=new Map(), lg=null, lbMoved=false, lastTap=0, lbDown=null, lbPtr="mouse";
+const lbImg=()=>lb?$("#lightbox img"):null;
+/* центр фото без трансформації (scale — навколо центру, тож центр зсувається лише на translate) */
+function lbBase(img){const r=img.getBoundingClientRect();return {x:r.left+r.width/2-lz.x,y:r.top+r.height/2-lz.y}}
+function lbApply(anim){
+  const img=lbImg(); if(!img)return;
+  if(lz.s<=1.001)lz={s:1,x:0,y:0};
+  else{const mx=Math.max(0,(img.offsetWidth*lz.s-innerWidth)/2), my=Math.max(0,(img.offsetHeight*lz.s-innerHeight)/2);
+    lz.x=Math.min(mx,Math.max(-mx,lz.x)); lz.y=Math.min(my,Math.max(-my,lz.y))}
+  img.style.transition=anim?"transform .2s ease-out":"none";
+  img.style.transform=lz.s===1?"":`translate(${lz.x}px,${lz.y}px) scale(${lz.s})`;
+  $("#lightbox").classList.toggle("zoomed",lz.s>1);
+}
+/* масштаб s з нерухомою точкою (px,py) під пальцем/курсором */
+function lbZoomAt(s,px,py,anim,from=lz,c){
+  const img=lbImg(); if(!img)return;
+  c=c||lbBase(img); s=Math.min(LBZ_MAX,Math.max(1,s)); const k=s/from.s;
+  lz={s,x:px-c.x-(px-c.x-from.x)*k,y:py-c.y-(py-c.y-from.y)*k}; lbApply(anim);
+}
+const LBX=$("#lightbox");
+LBX.addEventListener("pointerdown",e=>{
+  lbDown=e.target; lbPtr=e.pointerType;
+  if(e.target.closest("button"))return;
+  lp.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(lp.size===1){lbMoved=false;lg={mode:"one",sx:e.clientX,sy:e.clientY,ox:lz.x,oy:lz.y}}
+  else if(lp.size===2&&lbImg()){const [a,b]=[...lp.values()];lbMoved=true;
+    lg={mode:"pinch",d:Math.hypot(a.x-b.x,a.y-b.y)||1,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,from:{...lz},c:lbBase(lbImg())}}
 });
+LBX.addEventListener("pointermove",e=>{
+  if(!lp.has(e.pointerId)||!lg)return;
+  lp.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(lg.mode==="pinch"&&lp.size>=2){
+    const [a,b]=[...lp.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    lbZoomAt(lg.from.s*d/lg.d,lg.mx,lg.my,false,lg.from,lg.c);
+    lz.x+=mx-lg.mx; lz.y+=my-lg.my; lbApply(false); return;
+  }
+  if(lg.mode==="one"){
+    const dx=e.clientX-lg.sx, dy=e.clientY-lg.sy;
+    if(Math.abs(dx)+Math.abs(dy)>8)lbMoved=true;
+    if(lz.s>1){lz.x=lg.ox+dx;lz.y=lg.oy+dy;lbApply(false)}
+  }
+});
+function lbUp(e){
+  if(!lp.has(e.pointerId))return;
+  lp.delete(e.pointerId);
+  if(lg&&lg.mode==="one"&&!lp.size){
+    const dx=e.clientX-lg.sx, dy=e.clientY-lg.sy, touch=e.pointerType!=="mouse"; lg=null;
+    if(touch&&lz.s===1&&e.type==="pointerup"){
+      if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)){lbStep(dx<0?1:-1);return}
+      if(dy>80&&Math.abs(dy)>Math.abs(dx)){closeLightbox();return}
+    }
+    /* подвійний тап по фото: 1 ↔ 2,5× у точці дотику (миша — через dblclick нижче) */
+    if(touch&&!lbMoved&&e.target.tagName==="IMG"){const now=Date.now();if(now-lastTap<320){lastTap=0;lbZoomAt(lz.s>1?1:2.5,e.clientX,e.clientY,true)}else lastTap=now}
+    return;
+  }
+  /* після щипка один палець лишився — продовжуємо перетягування від його поточної точки */
+  if(lp.size===1){const [a]=[...lp.values()];lg={mode:"one",sx:a.x,sy:a.y,ox:lz.x,oy:lz.y}}
+  else if(!lp.size)lg=null;
+}
+LBX.addEventListener("pointerup",lbUp);
+LBX.addEventListener("pointercancel",lbUp);
+LBX.addEventListener("dblclick",e=>{if(e.target.tagName==="IMG"&&lbPtr==="mouse")lbZoomAt(lz.s>1?1:2.5,e.clientX,e.clientY,true)});
+LBX.addEventListener("wheel",e=>{if(!lbImg())return;e.preventDefault();lbZoomAt(lz.s*Math.exp(-e.deltaY*0.0015),e.clientX,e.clientY,false)},{passive:false});
+addEventListener("resize",()=>{if(lb&&lz.s>1)lbApply(false)});
 let ct; function saveCommon(){clearTimeout(ct);ct=setTimeout(async()=>{try{await db.doc("settings/common").set({...common,updatedAt:new Date().toISOString()});$("#common-saving").textContent="Сохранено"}catch(e){$("#common-saving").textContent="Не удалось сохранить"}},600)}
 
 /* ---------- boot ---------- */
