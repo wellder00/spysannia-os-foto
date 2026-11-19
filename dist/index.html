@@ -232,7 +232,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .pthumb{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:zoom-in;background:var(--sunk)}
 .pthumbwrap{position:relative;display:block}
-.pdel{position:absolute;top:4px;right:4px;min-width:22px;height:22px;border-radius:11px;border:0;background:rgba(20,20,20,.42);color:#fff;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0 6px}
+.pdel{position:absolute;top:4px;right:4px;min-width:28px;height:28px;border-radius:14px;border:0;background:rgba(20,20,20,.55);color:#fff;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0 6px}
 .pdel.confirm{background:var(--bad);font-size:12px;font-weight:600}
 .totop{position:fixed;right:calc(14px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:15;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:20px;box-shadow:0 2px 10px rgba(0,0,0,.18);cursor:pointer}
 .paddrow{display:flex}
@@ -247,9 +247,10 @@ button.pill{border:0;font:inherit}
 .lightbox .btn{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
 .lightbox .btn:hover{background:rgba(255,255,255,.22)}
 .lightbox #lb-close{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px))}
-.lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:26px;padding:10px 16px}
+.lightbox .lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:26px;padding:10px 16px;z-index:2}
 #lb-prev{left:calc(8px + env(safe-area-inset-left,0px))}#lb-next{right:calc(8px + env(safe-area-inset-right,0px))}
 .lb-cap{color:#fff;text-align:center}
+.lightbox .btn.lb-del.confirm{background:var(--bad);border-color:var(--bad)}
 /* Малоцінка (МШП) — простий список без фото */
 .mrow2{display:grid;grid-template-columns:auto 90px minmax(0,1fr) 70px 90px 90px;gap:10px;align-items:center;padding:9px 12px;border-top:1px solid var(--line)}
 .mrow2:first-child{border-top:0}
@@ -300,7 +301,7 @@ button.pill{border:0;font:inherit}
 }
 @media (max-width:480px){
   .lightbox img{max-width:96vw;max-height:72vh}
-  .lb-nav{font-size:24px;padding:12px 16px}
+  .lightbox .lb-nav{font-size:24px;padding:12px 16px}
 }
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
 </style>
@@ -1136,15 +1137,17 @@ async function addCardPhoto(inv,file){
   try{ await db.doc(`cardPhotos/${id}`).set(doc); toast("Фото додано") }
   catch(e){ const n={...extraPhotos}; delete n[id]; extraPhotos=n; renderPhotoList(); renderMshpList(); toast("Не вдалося завантажити фото") }
 }
+function lbRefresh(){if(!lb)return;const n=cardPhotoList(lb.inv,catalog[lb.inv]||{}).length;if(!n){closeLightbox();return}lb.idx=Math.min(lb.idx,n-1);renderLightbox()}
 async function deleteCardPhoto(inv,kind,key){
+  delConfirm.clear();
   if(kind==="dynamic"){
-    const n={...extraPhotos}; delete n[key]; extraPhotos=n; renderPhotoList(); renderMshpList();
+    const n={...extraPhotos}; delete n[key]; extraPhotos=n; renderPhotoList(); renderMshpList(); lbRefresh();
     if(!db)return;
     try{ await db.doc(`cardPhotos/${key}`).delete() }catch(e){ toast("Не вдалося видалити фото") }
   } else {
     const hidden=[...new Set([...((flags[inv]||{}).hiddenPhotos||[]),key])];
     savePhotoMeta(inv,{hiddenPhotos:hidden});
-    renderPhotoList();
+    renderPhotoList(); lbRefresh();
   }
 }
 /* подвійне підтвердження видалення фото (без confirm() — заборонено в sandbox claude.ai) */
@@ -1153,8 +1156,9 @@ function askDelPhoto(btn,inv,kind,key){
   const token=kind+":"+key;
   if(delConfirm.has(token)){ delConfirm.delete(token); deleteCardPhoto(inv,kind,key); return }
   delConfirm.add(token);
+  const txt=btn.textContent, ttl=btn.title;
   btn.classList.add("confirm"); btn.title="Натисніть ще раз, щоб видалити"; btn.textContent="Видалити?";
-  setTimeout(()=>{ if(delConfirm.has(token)){ delConfirm.delete(token); btn.classList.remove("confirm"); btn.title="Видалити фото"; btn.textContent="✕" } },3000);
+  setTimeout(()=>{ if(delConfirm.has(token)){ delConfirm.delete(token); btn.classList.remove("confirm"); btn.title=ttl; btn.textContent=txt } },3000);
 }
 function openLightbox(inv,idx){lb={inv,idx:+idx};renderLightbox()}
 function closeLightbox(){lb=null;$("#lightbox").hidden=true}
@@ -1168,7 +1172,7 @@ function renderLightbox(){
   box.innerHTML=`<button class="btn sm" id="lb-close" aria-label="Закрити">Закрити ✕</button>
     ${list.length>1?'<button class="btn lb-nav" id="lb-prev" aria-label="Попереднє фото">‹</button><button class="btn lb-nav" id="lb-next" aria-label="Наступне фото">›</button>':""}
     <img src="${esc(list[lb.idx].src)}" alt="фото ${esc(lb.inv)}" draggable="false">
-    <div class="lb-bar"><button class="btn" id="lb-zout" aria-label="Зменшити" title="Зменшити">−</button><div class="lb-cap sub">${esc(lb.inv)}${nm?" · "+esc(nm):""} · ${lb.idx+1}/${list.length}</div><button class="btn" id="lb-zin" aria-label="Збільшити" title="Збільшити (або двічі торкніться фото)">+</button></div>`;
+    <div class="lb-bar"><button class="btn" id="lb-zout" aria-label="Зменшити" title="Зменшити">−</button><div class="lb-cap sub">${esc(lb.inv)}${nm?" · "+esc(nm):""} · ${lb.idx+1}/${list.length}</div><button class="btn" id="lb-zin" aria-label="Збільшити" title="Збільшити (або двічі торкніться фото)">+</button><button class="btn lb-del" data-delphoto="${esc(list[lb.idx].key)}" data-delkind="${list[lb.idx].kind}" data-delinv="${esc(lb.inv)}" title="Видалити це фото">🗑 Видалити</button></div>`;
   lz={s:1,x:0,y:0}; lp.clear(); lg=null; box.classList.remove("zoomed");
 }
 
