@@ -322,7 +322,7 @@ button.pill{border:0;font:inherit}
   </header>
 
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="photos" aria-selected="true">Карточки ОС <span class="cnt" id="cnt-photos">0</span></button>
+    <button class="tab" role="tab" data-tab="photos" aria-selected="true">Основные средства <span class="cnt" id="cnt-photos">0</span></button>
     <button class="tab" role="tab" data-tab="items" aria-selected="false">Списание</button>
     <button class="tab" role="tab" data-tab="req" aria-selected="false">Вопросы<span class="hide-sm"> от Claude</span> <span class="cnt" id="cnt-req">0</span></button>
     <button class="tab" role="tab" data-tab="docs" aria-selected="false">Документы <span class="cnt" id="cnt-docs">0</span></button>
@@ -538,7 +538,7 @@ const NF2=new Intl.NumberFormat("uk-UA",{minimumFractionDigits:2,maximumFraction
 const money=v=>(v==null||v==="")?"—":NF2.format(Number(v));
 const kg=v=>NF1.format(Number(v||0));
 /* ---------- продуктивність ----------
-   1) важкі списки («Картки ОС», «Малоцінка», «Списание») малюються лише на видимій вкладці; прихована лише позначається
+   1) важкі списки («Основные средства», «Малоцінка», «Списание») малюються лише на видимій вкладці; прихована лише позначається
       в dirty і домальовується в showTab();
    2) snapshot-и бази зводяться в один перерендер на кадр (later);
    3) список не перемальовується, якщо його вхідні дані не змінились (photoSig/mshpSig) — напр. луна власного запису.
@@ -619,7 +619,7 @@ function filtered(){
 }
 function flagSeg(inv){
   const fl=(flags[inv]||{}).status;
-  return `<span class="fseg" title="Позначка (як у «Картках ОС»)">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>`;
+  return `<span class="fseg" title="Позначка (як на вкладці «Основные средства»)">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>`;
 }
 function rowHtml(it){
   const need=needsData(it), fl=(flags[it.inv]||{}).status, used=!!usage[it.inv];
@@ -679,7 +679,7 @@ function armOrRun(btn,label,run){
 /* блок «Картка ОС» у картці позиції: позначка, фото, опис і двигун з довідника карток (photoFlags/cardPhotos); редагування — у самій картці */
 function itemCardHtml(it){
   const inv=it.inv, e=catalog[inv];
-  if(!e)return `<h2>Картка ОС</h2><div class="sub">${Object.keys(catalog).length?"Цього інв. номера немає в довіднику «Картки ОС».":"Довідник «Картки ОС» не завантажено."}</div>`;
+  if(!e)return `<h2>Картка ОС</h2><div class="sub">${Object.keys(catalog).length?"Цього інв. номера немає в довіднику «Основные средства».":"Довідник «Основные средства» не завантажено."}</div>`;
   const meta=flags[inv]||{}, fl=meta.status, list=cardPhotoList(inv,e), m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
   return `<h2>Картка ОС</h2>
     <div class="dcard${fl?" flag-"+fl:""}${used?" used":""}">
@@ -1170,7 +1170,7 @@ function renderPhotoList(){
   photoRenderPending=false; dirty.delete("photos");
   const sg=photoSig(); if(sg===photoSigLast)return; photoSigLast=sg;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
-  if(!entries.length){$("#f-pflag").innerHTML=$("#f-pkind").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
+  if(!entries.length){$("#f-pflag").innerHTML=$("#f-pkind").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник основных средств недоступен в этом окне.":"Справочник основных средств не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
   computeUsage();renderPhotoFilters();renderMotorCandidates();
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
