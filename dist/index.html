@@ -1,5 +1,5 @@
 <script src="../dev/firebase-shim.js"></script>
-<title>Списание ОС ГМЗ</title>
+<title>Материальные ценности ГМЗ</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f5b'/%3E%3Cpath d='M9.6 12h12.8M9.6 16h12.8M9.6 20h12.8' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAAD/ElEQVR4nO3cXU7bUBSFUYI6DzwvKtGhFanMyx4JVR8i0ZAfJ3F879le67EPIbr+OD1gk91TB17eXj9bvwfuN71/7J4aa/IGBLwNU4PAV/uCIt62aaW4H/pFRMzacT/khYVMq7Cfl35BMdOylcW+Q4RMD9N6kQktZnpp6K7vCiHT27S+eUKLmUe5p62bghYzj3ZrY1cHLWbWcktrVwUtZtZ2bXOzgxYzrVzT3qygxUxrcxu8GLSY6cWcFhe/9Q0tnQ3adKY3l5o8GbSY6dW5Nq0cRDkatOlM7041+i1oMVPFsVatHET5L2jTmWoOmzWhiSJoMoO2blDV13ZNaKIImrygrRtUt2/YhCaKoIkiaKLs7M8kMaGJImiiCJoogiaKoIkiaKIImiiCJoqgiSJoogiaKIImiqCJImiiCJoogiaKoIkiaKIImiiCJsqPpzDj7z/f/m349bPJe6lwNmnnE/NX36cuFvMlhB2xcoh5GWPAOZYPOuEi9GQsfp7lg4aYoKtPk16Nhc+1dNBwSNBEETRRBE2U0kEn3Ajo0VD4XEsHDXFBV54mPRqKn2f5oBMuQi+GgHOMeTgp4aZAK0NAyLFBs20RKwfsCZoogiaKoIkiaKIImiiCJoqgiSJoogiaKIImiqCJImii+LDGDRl9WGMdnoO+X0LYESuHmJcxBpxj+aATLkJPxuLnWT5oiAm6+jTp1Vj4XEsHDYcETRRBE0XQRCkddMKNgB4Nhc+1dNAQF3TladKjofh5lg864SL0Ygg4x5iHkxJuCrQyBIQcGzTbFrFywJ6giSJoogiaKIImiqCJImiiCJoogiaKoIkiaKIImig+225DRp9tV4fHRu+XEHbEyiHmZYwB51g+6ISL0JOx+HmWDxpigq4+TXo1Fj7X0kHDIUETRdBEETRRSgedcCOgR0Phcy0dNMQFXXma9Ggofp7lg064CL0YAs4x5uGkhJsCrQwBIccGzbZFrBywJ2iiCJoogiaKoIkiaKIImiiCJoqgiSJoogiaKIImiqCJImiiCJoogiaKoIkiaKIImiiCJsrz9P6xa/0mYAn/WjahiSJoogiavKDt0VS3b9iEJoqgyQza2kFVX9s1oYkiaHKDtnZQzWGzJjRRvgVtSlPFsVaPTmhR07tTjVo5iHIyaFOaXp1r8+yEFjW9udSklYMoF4M2penFnBZnTWhR09rcBmevHKKmlWvau2qHFjVru7a5q38oFDVruaW1m37LIWoe7dbGbv61nah5lHvaWiTKl7fXzyVeh22bFhiSi9xYMa3ppaHFQzStaTkMF7/1bVrTspWHxmdas/bQW22ainvbppX+526yHoh7G6YG62cX+67AM0wd/Pz0F9OfJicflOvTAAAAAElFTkSuQmCC">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -219,6 +219,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .tag.used{background:var(--work-soft);color:var(--work);border-color:var(--work);cursor:pointer;font:inherit;font-size:12px;font-weight:600;padding:2px 8px}
 .tag.used.bad{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 .mtags{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle}
+/* «Малоцінка»: позначка «до списання» — окремо від кольору (колір = є/немає/перевірити) */
+.tag.wo{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:600}
+.m-acts{display:flex;gap:6px;flex-wrap:wrap}
+.btn.wo-btn[aria-pressed="true"]{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 .compat{border-radius:6px;padding:8px 10px;font-size:13px;margin-top:8px;border:1px solid var(--line);border-left-width:4px}
 .compat.ok{background:var(--ok-soft);border-color:var(--ok)}
 .compat.info,.compat.warn{background:var(--warn-soft);border-color:var(--warn)}
@@ -312,14 +316,14 @@ button.pill{border:0;font:inherit}
   <header class="top">
     <div>
       <div class="sub">ГМЗ · Дільниця хімреагентного господарства · відомість ОЗ на 01.10.2026</div>
-      <h1>Списание основных средств</h1>
+      <h1>Материальные ценности</h1>
     </div>
     <div class="conn"><span class="dot" id="conn-dot"></span><span id="conn-txt">Подключаюсь к базе…</span></div>
   </header>
 
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-tab="photos" aria-selected="true">Карточки ОС <span class="cnt" id="cnt-photos">0</span></button>
-    <button class="tab" role="tab" data-tab="items" aria-selected="false">Позиции</button>
+    <button class="tab" role="tab" data-tab="items" aria-selected="false">Списание</button>
     <button class="tab" role="tab" data-tab="req" aria-selected="false">Вопросы<span class="hide-sm"> от Claude</span> <span class="cnt" id="cnt-req">0</span></button>
     <button class="tab" role="tab" data-tab="docs" aria-selected="false">Документы <span class="cnt" id="cnt-docs">0</span></button>
     <button class="tab" role="tab" data-tab="common" aria-selected="false">Общие данные</button>
@@ -534,7 +538,7 @@ const NF2=new Intl.NumberFormat("uk-UA",{minimumFractionDigits:2,maximumFraction
 const money=v=>(v==null||v==="")?"—":NF2.format(Number(v));
 const kg=v=>NF1.format(Number(v||0));
 /* ---------- продуктивність ----------
-   1) важкі списки («Картки ОС», «Малоцінка», «Позиции») малюються лише на видимій вкладці; прихована лише позначається
+   1) важкі списки («Картки ОС», «Малоцінка», «Списание») малюються лише на видимій вкладці; прихована лише позначається
       в dirty і домальовується в showTab();
    2) snapshot-и бази зводяться в один перерендер на кадр (later);
    3) список не перемальовується, якщо його вхідні дані не змінились (photoSig/mshpSig) — напр. луна власного запису.
@@ -1268,14 +1272,15 @@ function renderLightbox(){
 
 /* ---------- малоцінка (МШП) — лише довідниковий список, без фото й генерації актів ---------- */
 function renderMflagFilters(){
-  const n={all:0,none:0,nomotor:0,green:0,yellow:0,red:0,purple:0}, units=mshpUnits();
-  for(const u of units){n.all++;const st=mshpStatus(u.id);if(st&&st in n)n[st]++;else n.none++;if(motorState(u.id,u.it).missing)n.nomotor++}
+  const n={all:0,none:0,nomotor:0,writeoff:0,green:0,yellow:0,red:0,purple:0}, units=mshpUnits();
+  for(const u of units){n.all++;const st=mshpStatus(u.id);if(st&&st in n)n[st]++;else n.none++;if(motorState(u.id,u.it).missing)n.nomotor++;if((mflags[u.id]||{}).writeoff)n.writeoff++}
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
-  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""]];
+  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["writeoff","К списанию",""],["nomotor","Насосы без двигателя",""]];
   $("#f-mflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-mflag="${k}" aria-pressed="${fMflag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
   $("#f-mkind").innerHTML=kindChips(units.map(u=>u.it.name),fMkind,"mkind");
 }
 const mOpen=new Set();
+const WO_TAG='<span class="tag wo" title="Позначено: потрібно списати">🗑 до списання</span>';
 function mshpRowHtml(u){
   const {id:nom,it}=u, meta=mflags[nom]||{}, fl=mshpStatus(nom), used=!!usage[nom], m=motorState(nom,it), cmp=motorCompat(nom);
   const motor=isMotor(it.name), open=mOpen.has(nom), ph=open?cardPhotoList(nom,{}):[], nph=cardPhotoCount(nom,{});
@@ -1283,13 +1288,13 @@ function mshpRowHtml(u){
   return `<div class="mrow2 ${fl?"flag-"+fl:""}${used?" used":""} pump" data-nomrow="${esc(nom)}">
     <span class="fseg m-flags" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-mflagbtn="${c}" data-nom="${esc(nom)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
     <span class="num m-nom">${esc(nom)}</span>
-    <span class="m-name">${esc(it.name)}${u.q>1?` <span class="tag">${u.k} з ${u.q}</span>`:""} <span class="mtags">${used?usedTags(nom):""}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}</span></span>
+    <span class="m-name">${esc(it.name)}${u.q>1?` <span class="tag">${u.k} з ${u.q}</span>`:""} <span class="mtags">${meta.writeoff?WO_TAG:""}${used?usedTags(nom):""}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}</span></span>
     <span class="num r m-qty">${qty}</span>
     <span class="num r m-price">${money(it.price)}</span>
     <span class="num r m-sum">${money(sum)}</span>
     <span class="c-meta"><span class="num">${esc(nom)}</span><span>${qty} × ${money(it.price)}</span><span>${money(sum)} грн</span></span>
     <div class="m-motor">
-      <div><button type="button" class="btn sm" data-mopen="${esc(nom)}" aria-expanded="${open}">${open?"▾":"▸"} Фото й опис${nph?` · фото: ${nph}`:""}${meta.desc?" · ✎":""}</button></div>
+      <div class="m-acts"><button type="button" class="btn sm" data-mopen="${esc(nom)}" aria-expanded="${open}">${open?"▾":"▸"} Фото й опис${nph?` · фото: ${nph}`:""}${meta.desc?" · ✎":""}</button><button type="button" class="btn sm wo-btn" data-mwo="${esc(nom)}" aria-pressed="${!!meta.writeoff}" title="Позначка-нагадування: цю позицію потрібно буде списати">${meta.writeoff?"✓ До списання":"🗑 Списати"}</button></div>
       <div class="m-body" ${open?"":"hidden"}>${open?`
         ${ph.length?`<div class="pgrid">${ph.map((p,i)=>`<span class="pthumbwrap"><img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(nom)}" data-pidx="${i}" alt="фото ${esc(nom)}"><button type="button" class="pdel" data-delphoto="${esc(p.key)}" data-delkind="${p.kind}" data-delinv="${esc(nom)}" title="Видалити фото">✕</button></span>`).join("")}</div>`:""}
         <div class="paddrow"><label class="btn sm" for="mf-${esc(nom)}">📷 Додати фото</label><input type="file" accept="image/*" id="mf-${esc(nom)}" data-addphoto="${esc(nom)}" hidden></div>
@@ -1326,6 +1331,7 @@ function renderMshpList(){
     if(fMkind&&kindOf(it.name)!==fMkind)return false;
     if(!fMflag)return true;
     const st=mshpStatus(id);
+    if(fMflag==="writeoff")return !!(mflags[id]||{}).writeoff;
     if(fMflag==="nomotor")return motorState(id,it).missing;
     return fMflag==="none"?!st:st===fMflag;
   });
@@ -1333,9 +1339,10 @@ function renderMshpList(){
   L.innerHTML=rows.length?head+rows.map(mshpRowHtml).join(""):'<div class="empty">Нічого не знайдено.</div>';
 }
 /* колір: перемальовуємо лише свій рядок (і лічильники), а не весь список; луна запису з бази потім не перемальовує нічого */
-async function setMflag(nom,color){
+function setMflag(nom,color){setMmeta(nom,{status:color||null})}
+function setMmeta(nom,patch){
   const sync=tab==="mshp"&&!dirty.has("mshp")&&!mshpRenderPending&&mshpSigLast===mshpSig();
-  saveMshpMeta(nom,{status:color||null});
+  saveMshpMeta(nom,patch);
   const row=$(`#mshp-list [data-nomrow="${CSS.escape(nom)}"]`), u=mshpUnit(nom);
   if(sync&&row&&u){row.outerHTML=mshpRowHtml(u);renderMflagFilters();mshpSigLast=mshpSig()}
   else renderMshpList();
@@ -1353,7 +1360,7 @@ async function saveMshpMeta(nom,patch,delay=0){
     if(!db)return;
     /* штука, що успадковує позначку позиції, зберігає явне «без позначки» (status:null), щоб позначка не поверталась */
     const u=mshpUnit(nom), inherits=u&&u.id!==u.nom&&(mflags[u.nom]||{}).status;
-    const empty=!cur.status&&cur.hasMotor===undefined&&!cur.motorNo&&!cur.desc&&!inherits;
+    const empty=!cur.status&&cur.hasMotor===undefined&&!cur.motorNo&&!cur.desc&&!cur.writeoff&&!inherits;
     try{ if(empty)await db.doc(`mshpFlags/${nom}`).delete(); else await db.doc(`mshpFlags/${nom}`).set({...cur,updatedAt:new Date().toISOString()}) }
     catch(err){ toast("Не вдалося зберегти") }
   },delay);
@@ -1366,7 +1373,7 @@ function refreshMshpMotorUi(nom){
   const warn=row.querySelector("[data-motorwarn]"); if(warn){warn.hidden=!m.dup;warn.textContent=m.dup?`Цей номер вже вказано для № ${m.dup}!`:""}
   const cb=row.querySelector("[data-motorcompat]"); if(cb)cb.innerHTML=compatHtml(nom);
   const tags=row.querySelector(".m-name .mtags");
-  if(tags)tags.innerHTML=(usage[nom]?usedTags(nom):"")+(cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':"")+(m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:"");
+  if(tags)tags.innerHTML=((mflags[nom]||{}).writeoff?WO_TAG:"")+(usage[nom]?usedTags(nom):"")+(cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':"")+(m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:"");
   renderMflagFilters();
 }
 
@@ -1421,6 +1428,7 @@ document.addEventListener("click",async e=>{
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,mshpStatus(nom)===c?null:c);return}
   const mo=t.closest("[data-mopen]"); if(mo){const id=mo.dataset.mopen,u=mshpUnit(id),row=mo.closest("[data-nomrow]");mOpen.has(id)?mOpen.delete(id):mOpen.add(id);if(u&&row){computeUsage();row.outerHTML=mshpRowHtml(u)}else renderMshpList();return}
+  const mw=t.closest("[data-mwo]"); if(mw){const id=mw.dataset.mwo;setMmeta(id,{writeoff:!(mflags[id]||{}).writeoff});return}
   const mf=t.closest("[data-mflag]"); if(mf){fMflag=mf.dataset.mflag;renderMshpList();return}
   const mk=t.closest("[data-mkind]"); if(mk){fMkind=mk.dataset.mkind;renderMshpList();return}
   const pk=t.closest("[data-pkind]"); if(pk){fPkind=pk.dataset.pkind;renderPhotoList();return}
@@ -1635,7 +1643,7 @@ renderStats();renderFilters();renderPhotoList();renderMshpList();
 
 <div id="gate" style="position:fixed;inset:0;background:#131715;color:#e6ebe7;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,sans-serif">
   <form id="gate-form" style="display:flex;flex-direction:column;gap:12px;width:min(320px,90vw)">
-    <div style="font-size:16px;font-weight:600">Списання ОС ГМЗ</div>
+    <div style="font-size:16px;font-weight:600">Матеріальні цінності ГМЗ</div>
     <input id="gate-pass" type="password" placeholder="Пароль" autocomplete="off" autocapitalize="off" style="padding:10px 12px;border-radius:6px;border:1px solid #333b37;background:#1b201e;color:#e6ebe7;font-size:15px">
     <button type="submit" style="padding:10px 12px;border-radius:6px;border:0;background:#6fbfb6;color:#0d1a18;font-weight:600;cursor:pointer">Увійти</button>
     <div id="gate-err" style="color:#ef8e83;font-size:13px;min-height:16px"></div>
