@@ -220,7 +220,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .tag.used.bad{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 .mtags{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle}
 /* «Малоцінка»: позначка «до списання» — окремо від кольору (колір = є/немає/перевірити) */
-.tag.wo{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:600}
+.tag.wo,.tag.unfit{background:var(--bad-soft);color:var(--bad);border-color:var(--bad);font-weight:600}
 .m-acts{display:flex;gap:6px;flex-wrap:wrap}
 .btn.wo-btn[aria-pressed="true"]{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 .compat{border-radius:6px;padding:8px 10px;font-size:13px;margin-top:8px;border:1px solid var(--line);border-left-width:4px}
@@ -384,6 +384,7 @@ button.pill{border:0;font:inherit}
       <div class="bar"><input id="p-q" class="search" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Поиск по инв. номеру или названию"></div>
       <div class="bar" id="f-pkind"></div>
       <div class="bar" id="f-pflag"></div>
+      <div class="bar" id="unfit-bar" hidden><button class="btn sm pri" id="unfit-dl"></button><span class="sub">файл Word для друку</span></div>
     </div>
     <div class="stack" id="photo-list"><div class="empty">Загружаю справочник…</div></div>
   </section>
@@ -501,7 +502,35 @@ const GEN=(function(){
            {kind:"818",title:`Акт списання ОЗ — ${tt}`,filename:`${fn} Акт списання ОЗ.xlsx`,bytes:act}];
   }
   function num0(v){const n=Number(v);return v!==null&&v!==""&&isFinite(n)&&n>0}
-  return{make,makeGroup};
+  /* перелік для друку (.docx без шаблону): заголовок, таблиця з шапкою, що повторюється на кожній сторінці, рядок «Разом», підписи.
+     cols: [{h, w (твіпи), al: "left"|"center"|"right"}]; rows/total — масиви рядків-клітинок (у клітинці можна \n). Альбомна A4. */
+  async function makeList({title,subtitle,cols,rows,total,sign}){
+    const cl=s=>xe(String(s??"").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,""));
+    const run=(t,o={})=>`<w:r>${o.b||o.sz||o.i?`<w:rPr>${o.b?"<w:b/>":""}${o.i?"<w:i/>":""}${o.sz?`<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>`:""}</w:rPr>`:""}${String(t??"").split(/\r?\n/).map((l,i)=>(i?"<w:br/>":"")+`<w:t xml:space="preserve">${cl(l)}</w:t>`).join("")}</w:r>`;
+    const par=(t,o={})=>`<w:p><w:pPr>${o.after!=null?`<w:spacing w:after="${o.after}"/>`:""}${o.al?`<w:jc w:val="${o.al}"/>`:""}</w:pPr>${run(t,o)}</w:p>`;
+    const W=cols.reduce((a,c)=>a+c.w,0);
+    const cell=(t,c,o={})=>`<w:tc><w:tcPr><w:tcW w:w="${o.span?o.w:c.w}" w:type="dxa"/>${o.span?`<w:gridSpan w:val="${o.span}"/>`:""}${o.fill?`<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>`:""}</w:tcPr>${par(t,{al:o.al||c.al||"left",sz:20,b:o.b})}</w:tc>`;
+    const bd=["top","left","bottom","right","insideH","insideV"].map(e=>`<w:${e} w:val="single" w:sz="4" w:space="0" w:color="808080"/>`).join("");
+    let tbl=`<w:tbl><w:tblPr><w:tblW w:w="${W}" w:type="dxa"/><w:tblBorders>${bd}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="57" w:type="dxa"/><w:right w:w="57" w:type="dxa"/></w:tblCellMar></w:tblPr>`
+      +`<w:tblGrid>${cols.map(c=>`<w:gridCol w:w="${c.w}"/>`).join("")}</w:tblGrid>`
+      +`<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>${cols.map(c=>cell(c.h,c,{al:"center",b:true,fill:"D9D9D9"})).join("")}</w:tr>`;
+    for(const r of rows)tbl+=`<w:tr><w:trPr><w:cantSplit/></w:trPr>${cols.map((c,i)=>cell(r[i],c)).join("")}</w:tr>`;
+    if(total){const sp=total.span||1, w=cols.slice(0,sp).reduce((a,c)=>a+c.w,0);
+      tbl+=`<w:tr><w:trPr><w:cantSplit/></w:trPr>${cell(total.label,cols[0],{span:sp,w,b:true,al:"right"})}${cols.slice(sp).map((c,i)=>cell(total.cells[i]??"",c,{b:true})).join("")}</w:tr>`}
+    tbl+="</w:tbl>";
+    const body=par(title,{al:"center",b:true,sz:28,after:60})+(subtitle?par(subtitle,{al:"center",i:true,after:200}):"")+tbl
+      +(sign||[]).map(s=>"<w:p/>"+par(s)).join("")
+      +`<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="850" w:right="850" w:bottom="850" w:left="1134" w:header="425" w:footer="425" w:gutter="0"/></w:sectPr>`;
+    const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"', H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+    const z=new JSZip();
+    z.file("[Content_Types].xml",H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>');
+    z.file("_rels/.rels",H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    z.file("word/_rels/document.xml.rels",H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    z.file("word/styles.xml",H+`<w:styles ${NS}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="Times New Roman" w:cs="Times New Roman"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="uk-UA"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`);
+    z.file("word/document.xml",H+`<w:document ${NS}><w:body>${body}</w:body></w:document>`);
+    return z.generateAsync({type:"uint8array",compression:"DEFLATE"});
+  }
+  return{make,makeGroup,makeList};
 })();
 </script>
 <script type="text/plain" id="app-src">
@@ -683,7 +712,7 @@ function itemCardHtml(it){
   const meta=flags[inv]||{}, fl=meta.status, list=cardPhotoList(inv,e), m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
   return `<h2>Картка ОС</h2>
     <div class="dcard${fl?" flag-"+fl:""}${used?" used":""}">
-      <div class="dhead">${flagSeg(inv)}<span class="ptags">${usedTags(inv)}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span></span></div>
+      <div class="dhead">${flagSeg(inv)}<span class="ptags">${meta.unfit?UNFIT_TAG:""}${usedTags(inv)}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span></span></div>
       ${list.length?`<div class="pgrid">${list.map((p,i)=>`<img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}">`).join("")}</div>`:""}
       ${meta.desc?`<div class="desc">${esc(meta.desc)}</div>`:""}
       ${m.pump?`<div class="sub">${m.hasMotor?"Насос з електродвигуном.":m.no?`Без двигуна, знятий двигун № <b class="num">${esc(m.no)}</b>.`:"Без двигуна, номер двигуна не вказано."}</div>${cmp?compatHtml(inv):""}`:""}
@@ -1088,7 +1117,7 @@ function pcardHtml(inv,e,open){
   return `<details class="pcard ${fl?"flag-"+fl:""}${used?" used":""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
-      <span class="ptags">${usedTags(inv)}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${nph?`фото: ${nph}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
+      <span class="ptags">${meta.unfit?UNFIT_TAG:""}${usedTags(inv)}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${nph?`фото: ${nph}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
     <div class="pbody"${open?"":" data-lazy"}>${open?pbodyHtml(inv,e):""}</div>
   </details>`;
 }
@@ -1103,7 +1132,7 @@ function pbodyHtml(inv,e){
         <div><small>Первісна вартість</small><b class="num">${money(e.perv)}</b></div>
         <div><small>Залишкова</small><b class="num">${money(e.zal)}</b></div>
       </div>`:'<div class="sub">Немає даних з відомості — лише фото за номером.</div>'}
-      ${!linked?`<div><button class="btn sm pri" data-addwriteoff="${esc(inv)}">+ Додати до списання</button></div>`:""}
+      <div class="m-acts">${!linked?`<button class="btn sm pri" data-addwriteoff="${esc(inv)}">+ Додати до списання</button>`:""}<button type="button" class="btn sm wo-btn" data-unfit="${esc(inv)}" aria-pressed="${!!meta.unfit}" title="Позначка «непридатне» — потрапляє в перелік для друку">${meta.unfit?UNFIT_ON:UNFIT_OFF}</button></div>
       ${list.length?`<div class="pgrid">${list.map((p,i)=>`<span class="pthumbwrap"><img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(inv)}" data-pidx="${i}" alt="фото ${esc(inv)}"><button type="button" class="pdel" data-delphoto="${esc(p.key)}" data-delkind="${p.kind}" data-delinv="${esc(inv)}" title="Видалити фото">✕</button></span>`).join("")}</div>`:""}
       <div class="paddrow"><label class="btn sm" for="pf-${esc(inv)}">📷 Додати фото</label><input type="file" accept="image/*" id="pf-${esc(inv)}" data-addphoto="${esc(inv)}" hidden></div>
       <div class="f full"><label for="pd-${esc(inv)}">Опис позиції</label><textarea id="pd-${esc(inv)}" data-pf="desc" data-pinv="${esc(inv)}" placeholder="Нотатки, стан, особливості…" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
@@ -1125,6 +1154,7 @@ function cardMatches(inv,e,s){
   if(s&&!(inv.includes(s)||String(e.name||"").toLowerCase().includes(s)))return false;
   if(fPkind&&kindOf(e.name)!==fPkind)return false;
   if(!fFlag)return true;
+  if(fFlag==="unfit")return !!(flags[inv]||{}).unfit;
   const st=(flags[inv]||{}).status;
   if(fFlag==="none")return !st;
   if(fFlag==="nomotor")return motorState(inv,e).missing;
@@ -1132,12 +1162,46 @@ function cardMatches(inv,e,s){
   return st===fFlag;
 }
 function renderPhotoFilters(){
-  const n={all:0,none:0,nomotor:0,nophoto:0,green:0,yellow:0,red:0,purple:0};
-  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!cardPhotoCount(inv,e))n.nophoto++}
+  const n={all:0,none:0,unfit:0,nomotor:0,nophoto:0,green:0,yellow:0,red:0,purple:0};
+  for(const [inv,e] of Object.entries(catalog)){n.all++;if((flags[inv]||{}).unfit)n.unfit++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!cardPhotoCount(inv,e))n.nophoto++}
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
-  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
+  const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["unfit","Непридатні",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
   $("#f-pkind").innerHTML=kindChips(Object.values(catalog).map(e=>e.name),fPkind,"pkind");
+  $("#unfit-bar").hidden=!(fFlag==="unfit"&&n.unfit); $("#unfit-dl").textContent=`🖨 Скачать перелік (${n.unfit})`;
+}
+/* «Непридатні» — окрема від кольору позначка (photoFlags.unfit, спільна для всіх через Firestore); за нею фільтр і перелік для друку */
+const UNFIT_TAG='<span class="tag unfit" title="Позначено як непридатне">⛔ непридатне</span>', UNFIT_ON="✓ Непридатне", UNFIT_OFF="⛔ Непридатне";
+function setUnfit(inv,on){
+  const sync=tab==="photos"&&!dirty.has("photos")&&!photoRenderPending&&photoSigLast===photoSig();
+  flags={...flags,[inv]:{...(flags[inv]||{}),unfit:on}};
+  if(sync)photoSigLast=photoSig();
+  const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`);
+  if(d){
+    const b=d.querySelector("[data-unfit]"); if(b){b.setAttribute("aria-pressed",on);b.textContent=on?UNFIT_ON:UNFIT_OFF}
+    const tg=d.querySelector(".ptags .tag.unfit"); if(on&&!tg)d.querySelector(".ptags").insertAdjacentHTML("afterbegin",UNFIT_TAG); else if(!on&&tg)tg.remove();
+  }
+  renderPhotoFilters(); if(openInv===inv)renderDrawer(false);
+  savePhotoMeta(inv,{unfit:on});
+}
+/* перелік непридатних ОЗ для друку — .docx через GEN.makeList і downloads.save (window.print у sandbox claude.ai не працює) */
+async function downloadUnfit(){
+  const list=Object.entries(catalog).filter(([inv])=>(flags[inv]||{}).unfit).sort((a,b)=>a[0].localeCompare(b[0]));
+  if(!list.length){toast("Немає позицій з позначкою «Непридатні»");return}
+  let dl=null; try{dl=await claude.use("downloads")}catch(e){}
+  if(!dl){toast("Скачивание недоступно в этом окне");return}
+  const d=new Date(), dt=`${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
+  const sum=k=>list.reduce((a,[,e])=>a+(Number(e[k])||0),0);
+  try{
+    const bytes=await GEN.makeList({
+      title:"Перелік непридатних основних засобів",
+      subtitle:`ГМЗ, дільниця хімреагентного господарства · станом на ${dt} · ${list.length} од.`,
+      cols:[{h:"№ з/п",w:550,al:"center"},{h:"Інв. №",w:1100,al:"center"},{h:"Найменування",w:4300},{h:"Дата введення",w:1050,al:"center"},{h:"Рах.",w:650,al:"center"},{h:"Первісна вартість, грн",w:1450,al:"right"},{h:"Залишкова вартість, грн",w:1450,al:"right"},{h:"Стан / примітка",w:4304}],
+      rows:list.map(([inv,e],i)=>[i+1,inv,e.name||"",e.date||"",e.rah||"",money(e.perv),money(e.zal),(flags[inv]||{}).desc||""]),
+      total:{label:"Разом",span:5,cells:[money(sum("perv")),money(sum("zal")),""]},
+      sign:["Склав: ____________________   ______________   «____» ______________ 20___ р.","Перевірив: ____________________   ______________   «____» ______________ 20___ р."]});
+    await dl.save({filename:`Непридатні ОЗ ${dt}.docx`,data:new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"})});
+  }catch(e){ if(e&&e.code==="declined")return; toast("Не вдалося сформувати перелік") }
 }
 /* додає позицію з довідника «Картки ОС» у журнал списання (items) — route визначається з рах. обліку (103 — нерухомість/Міненерго, інакше — центральна комісія) */
 async function addToWriteoff(inv){
@@ -1424,6 +1488,8 @@ document.addEventListener("click",async e=>{
   const gm=t.closest("[data-gotomshp]"); if(gm){e.preventDefault();gotoMshp(gm.dataset.gotomshp);return}
   const sm=t.closest("#photo-list .pcard>summary"); if(sm&&!t.closest("button,a,input")&&!sm.parentElement.open){pendingOpen=sm.parentElement.dataset.inv;fillCardBody(sm.parentElement)}
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
+  const uf=t.closest("[data-unfit]"); if(uf){e.preventDefault();setUnfit(uf.dataset.unfit,!(flags[uf.dataset.unfit]||{}).unfit);return}
+  if(t.closest("#unfit-dl")){downloadUnfit();return}
   const aw=t.closest("[data-addwriteoff]"); if(aw){e.preventDefault();addToWriteoff(aw.dataset.addwriteoff);return}
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,mshpStatus(nom)===c?null:c);return}
