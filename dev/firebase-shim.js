@@ -36,14 +36,21 @@
     let snap = null;
     try { const r = await fetch("../data/export.json", { cache: "no-cache" }); snap = await r.json(); }
     catch (e) { console.warn("[mirror-shim] не вдалося прочитати data/export.json", e); }
-    if (snap && (!store || store.exportedAt !== snap.exportedAt)) store = snap;
+    const fresh = !!snap && (!store || store.exportedAt !== snap.exportedAt);
+    if (fresh) store = snap;
     if (!store) store = {};
     for (const c of ["items", "requests", "files", "settings"]) store[c] = store[c] || {};
-    persist();
+    if (fresh) persist();
     return store;
   };
-  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { console.warn("[mirror-shim] localStorage переповнений", e); } };
-  const notify = () => setTimeout(() => subs.forEach((f) => f()), 0);
+  /* запис у localStorage відкладений: JSON.stringify усієї бази на кожну зміну гальмував введення */
+  let persistT = 0;
+  const persistNow = () => { clearTimeout(persistT); persistT = 0; try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { console.warn("[mirror-shim] localStorage переповнений", e); } };
+  const persist = () => { clearTimeout(persistT); persistT = setTimeout(persistNow, 300); };
+  addEventListener("pagehide", () => { if (persistT) persistNow(); });
+  /* сповіщаємо лише підписників зміненої колекції — раніше будь-який запис будив усі onSnapshot,
+     і застосунок перемальовувався кілька разів поспіль */
+  const notify = (c) => setTimeout(() => subs.forEach((f) => { if (f.c === c) f(); }), 0);
   const split = (path) => { const p = path.split("/"); return { c: p.slice(0, -1).join("/"), id: p[p.length - 1] }; };
   const coll = (c) => (store[c] = store[c] || {});
   const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
@@ -54,16 +61,16 @@
     return {
       id,
       async get() { await load(); const d = coll(c)[id]; return { id, exists: d !== undefined, data: () => clone(d) }; },
-      async set(data) { await load(); coll(c)[id] = clone(data); persist(); notify(); },
+      async set(data) { await load(); coll(c)[id] = clone(data); persist(); notify(c); },
       async update(data) {
         await load();
         if (coll(c)[id] === undefined) { const e = new Error("not found"); e.code = "not_found"; throw e; }
-        coll(c)[id] = { ...coll(c)[id], ...clone(data) }; persist(); notify();
+        coll(c)[id] = { ...coll(c)[id], ...clone(data) }; persist(); notify(c);
       },
-      async delete() { await load(); delete coll(c)[id]; persist(); notify(); },
+      async delete() { await load(); delete coll(c)[id]; persist(); notify(c); },
       onSnapshot(next, err) {
         const f = () => { const d = coll(c)[id]; next({ id, exists: d !== undefined, data: () => clone(d), metadata: { fromCache: false } }); };
-        load().then(() => { subs.add(f); f(); }).catch(err);
+        f.c = c; load().then(() => { subs.add(f); f(); }).catch(err);
         return () => subs.delete(f);
       },
     };
@@ -75,7 +82,7 @@
         metadata: { fromCache: false },
         docs: Object.entries(coll(c)).map(([id, d]) => ({ id, exists: true, data: () => clone(d) })),
       });
-      load().then(() => { subs.add(f); f(); }).catch(err);
+      f.c = c; load().then(() => { subs.add(f); f(); }).catch(err);
       return () => subs.delete(f);
     },
   });

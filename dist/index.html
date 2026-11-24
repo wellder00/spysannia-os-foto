@@ -529,8 +529,21 @@ let db=null, items={}, reqs={}, docs={}, common={}, catalog={}, flags={}, mshp={
 let tab="photos", fStatus="", fOwner="", fRoute="", fQ="", fReq="open", fPhoto="", fFlag="", fMshp="", fMflag="", fPkind="", fMkind="", sel=new Set(), openInv=null, lb=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const money=v=>(v==null||v==="")?"—":Number(v).toLocaleString("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2});
-const kg=v=>Number(v||0).toLocaleString("uk-UA",{maximumFractionDigits:1});
+/* форматери створюються один раз: toLocaleString на кожне число щоразу будував новий Intl.NumberFormat і був найдорожчим у рендері */
+const NF2=new Intl.NumberFormat("uk-UA",{minimumFractionDigits:2,maximumFractionDigits:2}), NF1=new Intl.NumberFormat("uk-UA",{maximumFractionDigits:1});
+const money=v=>(v==null||v==="")?"—":NF2.format(Number(v));
+const kg=v=>NF1.format(Number(v||0));
+/* ---------- продуктивність ----------
+   1) важкі списки («Картки ОС», «Малоцінка», «Позиции») малюються лише на видимій вкладці; прихована лише позначається
+      в dirty і домальовується в showTab();
+   2) snapshot-и бази зводяться в один перерендер на кадр (later);
+   3) список не перемальовується, якщо його вхідні дані не змінились (photoSig/mshpSig) — напр. луна власного запису.
+   flags/mflags/extraPhotos/items щоразу замінюються НОВИМ об'єктом (не мутуються) — на цьому тримаються кеші за ідентичністю. */
+const dirty=new Set(), laterQ=new Set();
+function later(fn){if(!laterQ.size)requestAnimationFrame(()=>{const fs=[...laterQ];laterQ.clear();for(const f of fs)f()});laterQ.add(fn)}
+const sigRepl=(k,v)=>k==="updatedAt"?undefined:v&&typeof v==="object"&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(x=>[x,v[x]])):v;
+const sigCache=new WeakMap();
+function stateSig(o){let s=sigCache.get(o);if(s===undefined){s=JSON.stringify(o,sigRepl);sigCache.set(o,s)}return s}
 const num=v=>{if(v===""||v==null)return null;const n=Number(String(v).replace(",","."));return isFinite(n)?n:null};
 function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>el.hidden=true,2600)}
 function setConn(s,t){conn=s;$("#conn-dot").className="dot "+(s==="on"?"on":s==="off"?"off":"");$("#conn-txt").textContent=t}
@@ -619,6 +632,8 @@ function rowHtml(it){
   </div>`;
 }
 function renderList(){
+  if(tab!=="items"){dirty.add("items");return}
+  dirty.delete("items");
   const L=$("#list"), rows=filtered(); computeUsage();
   if(!Object.keys(items).length){L.innerHTML=`<div class="empty">${conn==="off"?"База недоступна в этом окне. Откройте приложение в claude.ai под своей учётной записью.":"Позиции ещё не загружены. Как только я заполню базу, здесь появятся все 51 позиция."}</div>`;return}
   if(!rows.length){L.innerHTML='<div class="empty">Под фильтр ничего не попало.</div>';return}
@@ -906,10 +921,16 @@ function motorKey(no){const v=String(no||"").trim();return !catalog[v]&&mshp[v]&
 function srcOf(id){return !catalog[id]&&mshpUnit(id)?"mshp":"os"}
 function metaOf(id){return (srcOf(id)==="mshp"?mflags[id]:flags[id])||{}}
 function pumpName(id){return (catalog[id]||(mshpUnit(id)||{}).it||{}).name||""}
+/* індекс «номер двигуна → картки» перебудовується лише коли змінились flags/mflags (раніше — повний перебір на кожен насос) */
+let dupIdx={};
 function motorDupInv(inv,no){
   const v=motorKey(no); if(!v)return null;
-  const hit=[...Object.entries(flags),...Object.entries(mflags)].find(([k,m])=>k!==inv&&m&&m.motorNo&&motorKey(m.motorNo)===v);
-  return hit?hit[0]:null;
+  if(dupIdx.f!==flags||dupIdx.m!==mflags||dupIdx.c!==catalog||dupIdx.s!==mshp){
+    const map=new Map();
+    for(const src of [flags,mflags])for(const [k,m] of Object.entries(src))if(m&&m.motorNo){const key=motorKey(m.motorNo);if(!map.has(key))map.set(key,[]);map.get(key).push(k)}
+    dupIdx={f:flags,m:mflags,c:catalog,s:mshp,map};
+  }
+  return (dupIdx.map.get(v)||[]).find(k=>k!==inv)||null;
 }
 /* двигуни-кандидати для підказки при вводі номера знятого двигуна: позиції зі словом "двигун"
    в назві і з довідника ОЗ (catalog), і з довідника МШП (mshp) — один спільний <datalist> */
@@ -959,7 +980,14 @@ function motorInfo(no){
   return null;
 }
 const CMP_RANK={ok:0,info:1,warn:2,bad:3}, CMP_TITLE={ok:"Сумісні",info:"Даних недостатньо",warn:"Перевірте",bad:"Несумісні"};
+/* результат кешується до наступної зміни flags/mflags — у рендері викликається по кілька разів на картку */
+let cmpMemo={};
 function motorCompat(pumpInv){
+  if(cmpMemo.f!==flags||cmpMemo.m!==mflags||cmpMemo.c!==catalog||cmpMemo.s!==mshp)cmpMemo={f:flags,m:mflags,c:catalog,s:mshp,map:new Map()};
+  if(!cmpMemo.map.has(pumpInv))cmpMemo.map.set(pumpInv,motorCompat0(pumpInv));
+  return cmpMemo.map.get(pumpInv);
+}
+function motorCompat0(pumpInv){
   const e=catalog[pumpInv]||mshp[pumpInv]||{}, m=motorState(pumpInv,e), pdesc=metaOf(pumpInv).desc||"";
   if(!m.pump||m.hasMotor||!m.no)return null;
   const mi=motorInfo(m.no);
@@ -1023,21 +1051,48 @@ function refreshMotorUi(inv){
 /* static — фото "запечені" у збірку (ОС/Карточки ОС, з git); dynamic — додані з телефону/комп'ютера
    через cardPhotos (Firestore), видаляються насправді. Static не можна стерти з диска з телефону —
    "видалення" ховає шлях у photoFlags.hiddenPhotos (tombstone), оригінал лишається в репо. */
+/* cardPhotos індексуються за inv один раз на зміну extraPhotos; base64 декодується в blob: URL один раз на фото —
+   у розмітку йде коротке посилання, а не сотні КБ base64 (раніше їх екранував esc() і парсив innerHTML на кожен рендер) */
+let phIdx={}; const blobUrls=new Map();
+function photoIdx(){
+  if(phIdx.src===extraPhotos)return phIdx;
+  const by=new Map(), keep=new Set();
+  for(const [id,p] of Object.entries(extraPhotos)){if(!p||!p.b64)continue;keep.add(id);if(!by.has(p.inv))by.set(p.inv,[]);by.get(p.inv).push([id,p])}
+  for(const l of by.values())l.sort((a,b)=>String(a[1].addedAt||"").localeCompare(String(b[1].addedAt||"")));
+  for(const [id,u] of blobUrls)if(!keep.has(id)){if(u.startsWith("blob:"))URL.revokeObjectURL(u);blobUrls.delete(id)}
+  return phIdx={src:extraPhotos,by,sig:[...keep].sort().map(id=>id+":"+extraPhotos[id].inv).join()};
+}
+function dynSrc(id,p){
+  let u=blobUrls.get(id); if(u)return u;
+  try{const bin=atob(p.b64), a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);u=URL.createObjectURL(new Blob([a],{type:p.mime||"image/jpeg"}))}
+  catch(e){u=`data:${p.mime||"image/jpeg"};base64,${p.b64}`}
+  blobUrls.set(id,u); return u;
+}
 function cardPhotoList(inv,e){
   const hidden=new Set((flags[inv]||{}).hiddenPhotos||[]);
   const stat=(e.photos||[]).filter(p=>!hidden.has(p)).map(p=>({src:photoUrl(p),kind:"static",key:p}));
-  const dyn=Object.entries(extraPhotos).filter(([,p])=>p.inv===inv)
-    .sort((a,b)=>String(a[1].addedAt||"").localeCompare(String(b[1].addedAt||"")))
-    .map(([id,p])=>({src:`data:${p.mime||"image/jpeg"};base64,${p.b64}`,kind:"dynamic",key:id}));
+  const dyn=(photoIdx().by.get(inv)||[]).map(([id,p])=>({src:dynSrc(id,p),kind:"dynamic",key:id}));
   return [...stat,...dyn];
 }
-function pcardHtml(inv,e){
-  const linked=items[inv], list=cardPhotoList(inv,e), meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
+/* лише кількість (лічильники, фільтр «без фото») — без побудови URL */
+function cardPhotoCount(inv,e){
+  const ph=e.photos||[], h=(flags[inv]||{}).hiddenPhotos;
+  return (h&&h.length?ph.filter(p=>!h.includes(p)).length:ph.length)+(photoIdx().by.get(inv)||[]).length;
+}
+function pcardHtml(inv,e,open){
+  const linked=items[inv], nph=cardPhotoCount(inv,e), meta=flags[inv]||{}, fl=meta.status, m=motorState(inv,e), used=!!usage[inv], cmp=motorCompat(inv);
   return `<details class="pcard ${fl?"flag-"+fl:""}${used?" used":""}" data-inv="${esc(inv)}">
     <summary><span class="psum"><span class="num">${esc(inv)}</span><span class="nm">${esc(e.name||"(немає в відомості)")}</span>${e.date?`<small class="sub">введено ${esc(e.date)}</small>`:""}</span>
       <span class="fseg" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-flagbtn="${c}" data-inv="${esc(inv)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
-      <span class="ptags">${usedTags(inv)}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${list.length?`фото: ${list.length}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
-    <div class="pbody">
+      <span class="ptags">${usedTags(inv)}${cmp&&cmp.level==="bad"?'<span class="tag alert" data-cmptag>⚠ несумісний двигун</span>':""}${m.missing?`<span class="tag alert" title="${ALERT_TITLE}">${ALERT_TXT}</span>`:""}<span class="tag">${nph?`фото: ${nph}`:"без фото"}</span>${linked?`<button class="pill ${linked.status}" data-gotoinv="${esc(inv)}">${ST[linked.status]}</button>`:""}</span></summary>
+    <div class="pbody"${open?"":" data-lazy"}>${open?pbodyHtml(inv,e):""}</div>
+  </details>`;
+}
+/* тіло картки будується лише для відкритих (згорнута — порожній .pbody[data-lazy], заповнює fillCardBody при розгортанні):
+   200+ карток з полями, фото й перевірками двигунів робили кожен рендер списку важким */
+function pbodyHtml(inv,e){
+  const linked=items[inv], list=cardPhotoList(inv,e), meta=flags[inv]||{}, m=motorState(inv,e), used=!!usage[inv];
+  return `
       ${e.rah?`<div class="kv">
         <div><small>Рах. обліку</small><b class="num">${esc(e.rah)}</b></div>
         <div><small>ШВВ</small><b class="num">${esc(e.shvv)}</b></div>
@@ -1058,10 +1113,9 @@ function pcardHtml(inv,e){
         </div>
       </div>`:""}
       ${used?usage[inv].map(p=>`<div class="compat ${(motorCompat(p)||{}).level||"info"}"><b>Встановлено на насос ${srcOf(p)==="mshp"?"МШП":"інв."} № ${esc(p)}</b> · ${esc(pumpName(p))}
-        <ul>${((motorCompat(p)||{}).lines||[]).map(l=>`<li>${esc(l)}</li>`).join("")}</ul></div>`).join(""):""}
-    </div>
-  </details>`;
+        <ul>${((motorCompat(p)||{}).lines||[]).map(l=>`<li>${esc(l)}</li>`).join("")}</ul></div>`).join(""):""}`;
 }
+function fillCardBody(d){const b=d.querySelector(".pbody[data-lazy]");if(!b)return;b.removeAttribute("data-lazy");b.innerHTML=pbodyHtml(d.dataset.inv,catalog[d.dataset.inv]||{})}
 /* фільтр за позначкою: "" усі · green/yellow/red/purple · none без позначки · nomotor насоси без двигуна і номера · nophoto без фото */
 function cardMatches(inv,e,s){
   if(s&&!(inv.includes(s)||String(e.name||"").toLowerCase().includes(s)))return false;
@@ -1070,12 +1124,12 @@ function cardMatches(inv,e,s){
   const st=(flags[inv]||{}).status;
   if(fFlag==="none")return !st;
   if(fFlag==="nomotor")return motorState(inv,e).missing;
-  if(fFlag==="nophoto")return !cardPhotoList(inv,e).length;
+  if(fFlag==="nophoto")return !cardPhotoCount(inv,e);
   return st===fFlag;
 }
 function renderPhotoFilters(){
   const n={all:0,none:0,nomotor:0,nophoto:0,green:0,yellow:0,red:0,purple:0};
-  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!cardPhotoList(inv,e).length)n.nophoto++}
+  for(const [inv,e] of Object.entries(catalog)){n.all++;const st=(flags[inv]||{}).status;if(st&&st in n)n[st]++;else n.none++;if(motorState(inv,e).missing)n.nomotor++;if(!cardPhotoCount(inv,e))n.nophoto++}
   const sw=c=>`<span class="sw" style="background:var(--${c})"></span>`;
   const opts=[["","Все",""],...FLAGS.map(([c,cls,l])=>[c,l,sw(cls)]),["none","Без отметки",""],["nomotor","Насосы без двигателя",""],["nophoto","Без фото",""]];
   $("#f-pflag").innerHTML=opts.map(([k,l,icon])=>`<button class="chip" data-pflag="${k}" aria-pressed="${fFlag===k}">${icon}${l}<span class="cnt">${n[k||"all"]}</span></button>`).join("");
@@ -1100,20 +1154,24 @@ async function addToWriteoff(inv){
 }
 /* поки користувач друкує в полі картки (опис, № двигуна), повний перерендер відкладається до виходу з поля:
    інакше snapshot власного ж запису підміняє поле новим і закриває випадний список підказок двигунів */
-let photoRenderPending=false;
+let photoRenderPending=false, photoSigLast="";
+/* усе, від чого залежить розмітка списку карток (які картки відкриті — береться з DOM) */
+const photoSig=()=>[conn,Object.keys(catalog).length,Object.keys(mshp).length,fPhoto,fFlag,fPkind,stateSig(flags),stateSig(mflags),photoIdx().sig,Object.keys(items).map(k=>k+":"+items[k].status).join()].join("\u0001");
 function renderPhotoList(){
   const L=$("#photo-list"), entries=Object.entries(catalog);
+  $("#cnt-photos").textContent=entries.length;
+  if(tab!=="photos"){dirty.add("photos");return}
   const ae=document.activeElement;
   if(ae&&L.contains(ae)&&ae.matches("input:not([type=checkbox]):not([type=file]),textarea")){photoRenderPending=true;return}
-  photoRenderPending=false;
-  $("#cnt-photos").textContent=entries.length;
+  photoRenderPending=false; dirty.delete("photos");
+  const sg=photoSig(); if(sg===photoSigLast)return; photoSigLast=sg;
   const openSet=new Set([...L.querySelectorAll("details[open]")].map(d=>d.dataset.inv));
   if(!entries.length){$("#f-pflag").innerHTML=$("#f-pkind").innerHTML="";L.innerHTML=`<div class="empty">${conn==="off"?"Справочник карточек недоступен в этом окне.":"Справочник карточек не загружен (нужен data/photos.json — см. build_photos.py)."}</div>`;return}
   computeUsage();renderPhotoFilters();renderMotorCandidates();
   const s=fPhoto.trim().toLowerCase();
   const rows=entries.filter(([inv,e])=>cardMatches(inv,e,s)).sort((a,b)=>a[0].localeCompare(b[0]));
   const focus=document.activeElement, fInv=focus&&focus.dataset?focus.dataset.pinv:null, fField=focus&&focus.dataset?focus.dataset.pf:null;
-  L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e)).join(""):'<div class="empty">Под фильтр ничего не попало.</div>';
+  L.innerHTML=rows.length?rows.map(([inv,e])=>pcardHtml(inv,e,openSet.has(inv))).join(""):'<div class="empty">Под фильтр ничего не попало.</div>';
   for(const d of L.querySelectorAll("details[data-inv]"))if(openSet.has(d.dataset.inv))d.open=true;
   if(fInv&&fField){const el=L.querySelector(`[data-pinv="${CSS.escape(fInv)}"][data-pf="${CSS.escape(fField)}"]`);if(el){el.focus();const v=el.value;el.setSelectionRange&&el.setSelectionRange(v.length,v.length)}}
 }
@@ -1126,9 +1184,11 @@ async function savePhotoMeta(inv,patch){
 }
 /* зміна кольору: патчимо лише цю картку (без перерендеру списку, щоб картка не зникала з-під пальця при активному фільтрі) */
 function setFlag(inv,color){
+  const sync=tab==="photos"&&!dirty.has("photos")&&!photoRenderPending&&photoSigLast===photoSig();
   flags={...flags,[inv]:{...(flags[inv]||{}),status:color||null}};
   const d=$(`#photo-list details[data-inv="${CSS.escape(inv)}"]`);
-  if(d){d.className="pcard"+(color?" flag-"+color:"");d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color))}
+  if(sync)photoSigLast=photoSig();
+  if(d){d.className="pcard"+(color?" flag-"+color:"")+(usage[inv]?" used":"");d.querySelectorAll("[data-flagbtn]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.flagbtn===color))}
   renderPhotoFilters();
   if(items[inv]){renderList();if(openInv===inv)renderDrawer(false)}
   savePhotoMeta(inv,{status:color||null});
@@ -1218,7 +1278,7 @@ function renderMflagFilters(){
 const mOpen=new Set();
 function mshpRowHtml(u){
   const {id:nom,it}=u, meta=mflags[nom]||{}, fl=mshpStatus(nom), used=!!usage[nom], m=motorState(nom,it), cmp=motorCompat(nom);
-  const motor=isMotor(it.name), ph=cardPhotoList(nom,{}), open=mOpen.has(nom);
+  const motor=isMotor(it.name), open=mOpen.has(nom), ph=open?cardPhotoList(nom,{}):[], nph=cardPhotoCount(nom,{});
   const qty=u.q>1?`1 ${esc(it.unit)} · ${u.k} з ${u.q}`:`${kg(it.qty)} ${esc(it.unit)}`, sum=u.q>1?it.price:it.sum;
   return `<div class="mrow2 ${fl?"flag-"+fl:""}${used?" used":""} pump" data-nomrow="${esc(nom)}">
     <span class="fseg m-flags" title="Позначка">${FLAGS.map(([c,cls,l])=>`<button class="fbtn ${cls}" data-mflagbtn="${c}" data-nom="${esc(nom)}" aria-pressed="${fl===c}" aria-label="${l}" title="${l}"></button>`).join("")}</span>
@@ -1229,11 +1289,11 @@ function mshpRowHtml(u){
     <span class="num r m-sum">${money(sum)}</span>
     <span class="c-meta"><span class="num">${esc(nom)}</span><span>${qty} × ${money(it.price)}</span><span>${money(sum)} грн</span></span>
     <div class="m-motor">
-      <div><button type="button" class="btn sm" data-mopen="${esc(nom)}" aria-expanded="${open}">${open?"▾":"▸"} Фото й опис${ph.length?` · фото: ${ph.length}`:""}${meta.desc?" · ✎":""}</button></div>
-      <div class="m-body" ${open?"":"hidden"}>
+      <div><button type="button" class="btn sm" data-mopen="${esc(nom)}" aria-expanded="${open}">${open?"▾":"▸"} Фото й опис${nph?` · фото: ${nph}`:""}${meta.desc?" · ✎":""}</button></div>
+      <div class="m-body" ${open?"":"hidden"}>${open?`
         ${ph.length?`<div class="pgrid">${ph.map((p,i)=>`<span class="pthumbwrap"><img class="pthumb" loading="lazy" src="${esc(p.src)}" data-pinv="${esc(nom)}" data-pidx="${i}" alt="фото ${esc(nom)}"><button type="button" class="pdel" data-delphoto="${esc(p.key)}" data-delkind="${p.kind}" data-delinv="${esc(nom)}" title="Видалити фото">✕</button></span>`).join("")}</div>`:""}
         <div class="paddrow"><label class="btn sm" for="mf-${esc(nom)}">📷 Додати фото</label><input type="file" accept="image/*" id="mf-${esc(nom)}" data-addphoto="${esc(nom)}" hidden></div>
-        <div class="f full"><label for="md-${esc(nom)}">${motor?"Опис двигуна":"Опис"}</label><textarea id="md-${esc(nom)}" data-mf="desc" data-nom="${esc(nom)}" placeholder="${motor?"Стан, де стоїть, маркування з шильдика (кВт, об/хв)…":m.pump?"Стан, де стоїть, маркування (кВт, об/хв)…":"Стан, де стоїть, примітки…"}" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>
+        <div class="f full"><label for="md-${esc(nom)}">${motor?"Опис двигуна":"Опис"}</label><textarea id="md-${esc(nom)}" data-mf="desc" data-nom="${esc(nom)}" placeholder="${motor?"Стан, де стоїть, маркування з шильдика (кВт, об/хв)…":m.pump?"Стан, де стоїть, маркування (кВт, об/хв)…":"Стан, де стоїть, примітки…"}" style="min-height:52px">${esc(meta.desc||"")}</textarea></div>`:""}
       </div>
     </div>
     ${m.pump?`<div class="m-motor">
@@ -1246,16 +1306,20 @@ function mshpRowHtml(u){
     </div>`:""}
   </div>`;
 }
-let mshpRenderPending=false;
+let mshpRenderPending=false, mshpSigLast="";
+/* розгорнуті рядки (mOpen) у підпис не входять — їх перемикання оновлює лише свій рядок */
+const mshpSig=()=>[Object.keys(mshp).length,Object.keys(catalog).length,fMshp,fMflag,fMkind,stateSig(mflags),stateSig(flags),photoIdx().sig].join("\u0001");
 function renderMshpList(){
   const L=$("#mshp-list"), entries=Object.entries(mshp);
+  if(tab!=="mshp"){$("#cnt-mshp").textContent=mshpUnits().length;dirty.add("mshp");return}
   const ae=document.activeElement;
   if(ae&&L.contains(ae)&&ae.matches("input:not([type=checkbox]):not([type=file]),textarea")){mshpRenderPending=true;return}
-  mshpRenderPending=false;
+  mshpRenderPending=false; dirty.delete("mshp");
+  const sg=mshpSig(); if(sg===mshpSigLast)return; mshpSigLast=sg;
   const units=mshpUnits();
   $("#cnt-mshp").textContent=units.length;
   if(!entries.length){$("#f-mflag").innerHTML=$("#f-mkind").innerHTML="";L.innerHTML='<div class="empty">Довідник МШП не завантажено. Виконайте <code>python build_mshp.py</code>.</div>';return}
-  computeUsage();renderMflagFilters();
+  computeUsage();renderMflagFilters();renderMotorCandidates();
   const s=fMshp.trim().toLowerCase();
   const rows=units.filter(({id,it})=>{
     if(s&&!(id.includes(s)||String(it.name||"").toLowerCase().includes(s)||String((mflags[id]||{}).desc||"").toLowerCase().includes(s)))return false;
@@ -1268,9 +1332,13 @@ function renderMshpList(){
   const head=`<div class="mrow2 head"><span></span><span>Номенкл. №</span><span>Найменування</span><span class="r">К-сть</span><span class="r">Ціна</span><span class="r">Сума</span></div>`;
   L.innerHTML=rows.length?head+rows.map(mshpRowHtml).join(""):'<div class="empty">Нічого не знайдено.</div>';
 }
+/* колір: перемальовуємо лише свій рядок (і лічильники), а не весь список; луна запису з бази потім не перемальовує нічого */
 async function setMflag(nom,color){
+  const sync=tab==="mshp"&&!dirty.has("mshp")&&!mshpRenderPending&&mshpSigLast===mshpSig();
   saveMshpMeta(nom,{status:color||null});
-  renderMshpList();
+  const row=$(`#mshp-list [data-nomrow="${CSS.escape(nom)}"]`), u=mshpUnit(nom);
+  if(sync&&row&&u){row.outerHTML=mshpRowHtml(u);renderMflagFilters();mshpSigLast=mshpSig()}
+  else renderMshpList();
 }
 /* mshpFlags/{nom}: {status, hasMotor, motorNo, updatedAt} — пишемо повний об'єкт (set), документ без даних видаляємо */
 /* незбережені (у дебаунсі) правки — mpend; накладаються поверх кожного snapshot, інакше snapshot чужого запису
@@ -1311,13 +1379,18 @@ function renderCommon(){
 
 /* ---------- global render ---------- */
 function render(){renderStats();renderFilters();renderList();renderReqs();renderDocs();renderCommon();renderPhotoList();renderMshpList();if(openInv)renderDrawer(false)}
+const drawerRefresh=()=>{if(openInv)renderDrawer(false)};
 function showTab(t){tab=t;document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===t));
   for(const v of["items","req","docs","common","photos","mshp"])$("#v-"+v).hidden=v!==t;
+  if(t==="photos"&&dirty.has("photos"))renderPhotoList();
+  if(t==="mshp"&&dirty.has("mshp"))renderMshpList();
+  if(t==="items"&&dirty.has("items"))renderList();
   const nav=$(".tabs"), act=nav.querySelector('[aria-selected="true"]');
   if(act)nav.scrollTo({left:act.offsetLeft-nav.clientWidth/2+act.offsetWidth/2,behavior:"smooth"});
   if(scrollY>nav.offsetTop)scrollTo({top:nav.offsetTop-8})}
 /* на телефоні картки — акордеон: відкриття однієї закриває інші й підкручує її під липку панель.
    Лише на дію користувача (pendingOpen), бо renderPhotoList() теж відкриває картки, відновлюючи стан. */
+document.addEventListener("toggle",e=>{const d=e.target;if(d instanceof HTMLDetailsElement&&d.open&&d.classList.contains("pcard"))fillCardBody(d)},true);
 const mqPhone=matchMedia("(max-width:640px)");
 let pendingOpen=null;
 document.addEventListener("toggle",e=>{
@@ -1342,12 +1415,12 @@ document.addEventListener("click",async e=>{
   if(t.closest("#totop")){scrollTo({top:0,behavior:"smooth"});return}
   const gc=t.closest("[data-gotocard]"); if(gc){e.preventDefault();gotoCard(gc.dataset.gotocard);return}
   const gm=t.closest("[data-gotomshp]"); if(gm){e.preventDefault();gotoMshp(gm.dataset.gotomshp);return}
-  const sm=t.closest("#photo-list .pcard>summary"); if(sm&&!t.closest("button,a,input")&&!sm.parentElement.open)pendingOpen=sm.parentElement.dataset.inv;
+  const sm=t.closest("#photo-list .pcard>summary"); if(sm&&!t.closest("button,a,input")&&!sm.parentElement.open){pendingOpen=sm.parentElement.dataset.inv;fillCardBody(sm.parentElement)}
   const gi=t.closest("[data-gotoinv]"); if(gi){showTab("items");openDrawer(gi.dataset.gotoinv);return}
   const aw=t.closest("[data-addwriteoff]"); if(aw){e.preventDefault();addToWriteoff(aw.dataset.addwriteoff);return}
   const fb=t.closest("[data-flagbtn]"); if(fb){e.preventDefault();const inv=fb.dataset.inv,c=fb.dataset.flagbtn;setFlag(inv,(flags[inv]||{}).status===c?null:c);return}
   const mfb=t.closest("[data-mflagbtn]"); if(mfb){e.preventDefault();const nom=mfb.dataset.nom,c=mfb.dataset.mflagbtn;setMflag(nom,mshpStatus(nom)===c?null:c);return}
-  const mo=t.closest("[data-mopen]"); if(mo){const id=mo.dataset.mopen;mOpen.has(id)?mOpen.delete(id):mOpen.add(id);renderMshpList();return}
+  const mo=t.closest("[data-mopen]"); if(mo){const id=mo.dataset.mopen,u=mshpUnit(id),row=mo.closest("[data-nomrow]");mOpen.has(id)?mOpen.delete(id):mOpen.add(id);if(u&&row){computeUsage();row.outerHTML=mshpRowHtml(u)}else renderMshpList();return}
   const mf=t.closest("[data-mflag]"); if(mf){fMflag=mf.dataset.mflag;renderMshpList();return}
   const mk=t.closest("[data-mkind]"); if(mk){fMkind=mk.dataset.mkind;renderMshpList();return}
   const pk=t.closest("[data-pkind]"); if(pk){fPkind=pk.dataset.pkind;renderPhotoList();return}
@@ -1440,7 +1513,7 @@ document.addEventListener("input",e=>{
   if(t.dataset.pi!==undefined){const ps=[...(common.people||[])];ps[+t.dataset.pi]={...ps[+t.dataset.pi],[t.dataset.pk]:t.value};common.people=ps;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.c){common[t.dataset.c]=t.value;$("#common-saving").textContent="Сохраняю…";saveCommon();return}
   if(t.dataset.mf){const nom=t.dataset.nom;saveMshpMeta(nom,{[t.dataset.mf]:t.value},500);if(t.dataset.mf==="motorNo"||(t.dataset.mf==="desc"&&mshp[nom]&&isPump(mshp[nom].name)))refreshMshpMotorUi(nom);return}
-  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"||k==="desc"){refreshMotorUi(inv);renderPhotoFilters()}return}
+  if(t.dataset.pf){const inv=t.dataset.pinv,k=t.dataset.pf;savePhotoMetaDebounced(inv,{[k]:t.value});if(k==="motorNo"||k==="desc")refreshMotorUi(inv);if(k==="motorNo")renderPhotoFilters();return}
 });
 document.addEventListener("focusout",e=>{
   if(photoRenderPending&&e.target.closest&&e.target.closest("#photo-list"))setTimeout(()=>{if(photoRenderPending)renderPhotoList()},0);
@@ -1549,13 +1622,13 @@ renderStats();renderFilters();renderPhotoList();renderMshpList();
   const ok=s=>{if(!s.metadata.fromCache){clearTimeout(timer);setConn("on","Данные сохраняются автоматически")}};
   db.collection("items").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),inv:d.id}});
     if(openInv&&n[openInv]&&q[`items/${openInv}`]&&Object.keys(q[`items/${openInv}`].pending).length)n[openInv]={...n[openInv],...items[openInv]};
-    items=n;render()},onErr);
-  db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;render()},onErr);
-  db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;render()},onErr);
+    items=n;later(render)},onErr);
+  db.collection("requests").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]={...d.data(),_id:d.id}});reqs=n;later(render)},onErr);
+  db.collection("files").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()});docs=n;later(render)},onErr);
   db.doc("settings/common").onSnapshot(s=>{ok(s);if(!$("#common-form").contains(document.activeElement))common={...(s.data()||{})};renderCommon()},onErr);
-  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;renderPhotoList();renderMshpList();renderList();if(openInv)renderDrawer(false)},onErr);
-  db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});for(const k in mpend)n[k]={...(n[k]||{}),...mpend[k]};mflags=n;renderMshpList();renderPhotoList();renderList();if(openInv)renderDrawer(false)},onErr);
-  db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;renderPhotoList();renderMshpList();if(openInv)renderDrawer(false)},onErr);
+  db.collection("photoFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});flags=n;later(renderPhotoList);later(renderMshpList);later(renderList);later(drawerRefresh)},onErr);
+  db.collection("mshpFlags").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});for(const k in mpend)n[k]={...(n[k]||{}),...mpend[k]};mflags=n;later(renderMshpList);later(renderPhotoList);later(renderList);later(drawerRefresh)},onErr);
+  db.collection("cardPhotos").onSnapshot(s=>{ok(s);const n={};s.docs.forEach(d=>{n[d.id]=d.data()||{}});extraPhotos=n;later(renderPhotoList);later(renderMshpList);later(drawerRefresh)},onErr);
 })();
 })();
 </script>
