@@ -1196,9 +1196,9 @@ async function downloadUnfit(){
     const bytes=await GEN.makeList({
       title:"Перелік непридатних основних засобів",
       subtitle:`ГМЗ, дільниця хімреагентного господарства · станом на ${dt} · ${list.length} од.`,
-      cols:[{h:"№ з/п",w:550,al:"center"},{h:"Інв. №",w:1100,al:"center"},{h:"Найменування",w:4300},{h:"Дата введення",w:1050,al:"center"},{h:"Рах.",w:650,al:"center"},{h:"Первісна вартість, грн",w:1450,al:"right"},{h:"Залишкова вартість, грн",w:1450,al:"right"},{h:"Стан / примітка",w:4304}],
-      rows:list.map(([inv,e],i)=>[i+1,inv,e.name||"",e.date||"",e.rah||"",money(e.perv),money(e.zal),(flags[inv]||{}).desc||""]),
-      total:{label:"Разом",span:5,cells:[money(sum("perv")),money(sum("zal")),""]},
+      cols:[{h:"№ з/п",w:550,al:"center"},{h:"Інв. №",w:1100,al:"center"},{h:"Найменування",w:8604},{h:"Дата введення",w:1050,al:"center"},{h:"Рах.",w:650,al:"center"},{h:"Первісна вартість, грн",w:1450,al:"right"},{h:"Залишкова вартість, грн",w:1450,al:"right"}],
+      rows:list.map(([inv,e],i)=>[i+1,inv,e.name||"",e.date||"",e.rah||"",money(e.perv),money(e.zal)]),
+      total:{label:"Разом",span:5,cells:[money(sum("perv")),money(sum("zal"))]},
       sign:["Склав: ____________________   ______________   «____» ______________ 20___ р.","Перевірив: ____________________   ______________   «____» ______________ 20___ р."]});
     await dl.save({filename:`Непридатні ОЗ ${dt}.docx`,data:new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"})});
   }catch(e){ if(e&&e.code==="declined")return; toast("Не вдалося сформувати перелік") }
